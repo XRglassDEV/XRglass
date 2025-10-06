@@ -1,15 +1,43 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
-generator client {
-  provider = "prisma-client-js"
-  output   = "../lib/generated/prisma"
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+generator client { provider = "prisma-client-js" }
+
+model WalletReputation {
+  id            String   @id @default(cuid())
+  address       String   @unique
+  score         Int
+  verdict       String   // 'green' | 'orange' | 'red'
+  reasons       Json     // [{id, weight, desc}]
+  sourceVersion String
+  lastScanAt    DateTime @default(now())
+  ttlUntil      DateTime
+}
+
+model DomainReputation {
+  id            String   @id @default(cuid())
+  domain        String   @unique
+  score         Int
+  verdict       String
+  reasons       Json
+  sourceVersion String
+  lastScanAt    DateTime @default(now())
+  ttlUntil      DateTime
+}
+
+model Allowlist { id String @id @default(cuid()); kind String; value String @unique; label String?; addedAt DateTime @default(now()) }
+model Denylist  { id String @id @default(cuid()); kind String; value String @unique; reason String?; addedAt DateTime @default(now()) }
+
+model ScanEvent {
+  id        String   @id @default(cuid())
+  kind      String   // 'wallet' | 'domain'
+  query     String
+  verdict   String
+  score     Int
+  at        DateTime @default(now())
+  ipHash    String?
+  userAgent String?
 }
