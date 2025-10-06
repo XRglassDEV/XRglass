@@ -29,7 +29,9 @@ export default function Home() {
   const [result, setResult] = useState<ApiResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [qParam, setQParam] = useState<string>(""); // ✅ safe ?q= for SSR
 
+  // load recents
   useEffect(() => {
     try {
       const raw = localStorage.getItem(RECENT_KEY);
@@ -37,9 +39,12 @@ export default function Home() {
     } catch {}
   }, []);
 
+  // read ?q= and auto-scan
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const q = sp.get("q");
+    const q = sp.get("q") || "";
+    setQParam(q); // ✅ safe state, used later
     if (q) {
       setInput(q);
       setTimeout(() => handleScan(q), 0);
@@ -69,28 +74,37 @@ export default function Home() {
     setLoading(true);
     setResult(null);
 
-    const url = kind === "wallet"
-      ? `/api/check?address=${encodeURIComponent(q)}`
-      : `/api/project-check?domain=${encodeURIComponent(q)}`;
+    const url =
+      kind === "wallet"
+        ? `/api/check?address=${encodeURIComponent(q)}`
+        : `/api/project-check?domain=${encodeURIComponent(q)}`;
 
     try {
       const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
       setResult(data);
 
-      const sp = new URLSearchParams(window.location.search);
-      sp.set("q", q);
-      window.history.replaceState(null, "", `?${sp.toString()}`);
+      // update shareable ?q=
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        sp.set("q", q);
+        window.history.replaceState(null, "", `?${sp.toString()}`);
+        setQParam(q); // keep in state for TrustStats
+      }
 
+      // save to recents
       const item: RecentItem = {
-        q, type: kind,
+        q,
+        type: kind,
         verdict: data.status === "ok" ? data.verdict : null,
         ts: Date.now(),
       };
       setRecent((prev) => {
         const withoutDup = prev.filter((r) => r.q !== q);
         const next = [item, ...withoutDup].slice(0, 8);
-        try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
+        try {
+          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+        } catch {}
         return next;
       });
     } catch {
@@ -167,7 +181,10 @@ export default function Home() {
             <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
               <span>Recent checks</span>
               <button
-                onClick={() => { localStorage.removeItem(RECENT_KEY); setRecent([]); }}
+                onClick={() => {
+                  localStorage.removeItem(RECENT_KEY);
+                  setRecent([]);
+                }}
                 className="text-cyan-300 hover:underline"
               >
                 Clear
@@ -177,10 +194,20 @@ export default function Home() {
               {recent.map((r) => (
                 <button
                   key={`${r.q}-${r.ts}`}
-                  onClick={() => { setInput(r.q); setMode(r.type); handleScan(r.q); }}
+                  onClick={() => {
+                    setInput(r.q);
+                    setMode(r.type);
+                    handleScan(r.q);
+                  }}
                   className={`rounded-full border px-3 py-1 text-xs transition
                     ${r.type === "wallet" ? "border-cyan-500/40" : "border-emerald-500/40"}
-                    ${r.verdict === "green" ? "bg-emerald-500/10" : r.verdict === "red" ? "bg-rose-500/10" : "bg-slate-700/50"}
+                    ${
+                      r.verdict === "green"
+                        ? "bg-emerald-500/10"
+                        : r.verdict === "red"
+                        ? "bg-rose-500/10"
+                        : "bg-slate-700/50"
+                    }
                     hover:bg-slate-700/60`}
                   title={new Date(r.ts).toLocaleString()}
                 >
@@ -211,7 +238,7 @@ export default function Home() {
                 query={
                   (result.details?.address as string) ||
                   (result.details?.domain as string) ||
-                  (new URLSearchParams(window.location.search).get("q") || "")
+                  qParam /* ✅ safe, SSR-friendly */
                 }
                 kind={result.details?.address ? "wallet" : "project"}
               />
