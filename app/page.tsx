@@ -20,7 +20,12 @@ function shorten(s: string, n = 14) {
 }
 
 /* Recent scans */
-type RecentItem = { q: string; type: "wallet" | "project"; verdict?: Verdict | null; ts: number };
+type RecentItem = {
+  q: string;
+  type: "wallet" | "project";
+  verdict?: Verdict | null;
+  ts: number;
+};
 const RECENT_KEY = "xrpulse_recent_scans";
 
 export default function Home() {
@@ -69,7 +74,13 @@ export default function Home() {
     if (!q) return;
 
     const kind: "wallet" | "project" =
-      mode === "wallet" ? "wallet" : mode === "project" ? "project" : isWalletAddress(q) ? "wallet" : "project";
+      mode === "wallet"
+        ? "wallet"
+        : mode === "project"
+        ? "project"
+        : isWalletAddress(q)
+        ? "wallet"
+        : "project";
 
     setLoading(true);
     setResult(null);
@@ -83,6 +94,19 @@ export default function Home() {
       const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
       setResult(data);
+
+      // 🔒 NEW: Log scan to Supabase
+      await fetch("/api/log-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: q,
+          type: kind,
+          verdict: data.verdict || "unknown",
+          score: data.details?.score || null,
+          details: data.details || {},
+        }),
+      });
 
       // update shareable ?q=
       if (typeof window !== "undefined") {
@@ -107,8 +131,12 @@ export default function Home() {
         } catch {}
         return next;
       });
-    } catch {
-      setResult({ status: "error", message: "We couldn’t reach the trust service. Please try again." });
+    } catch (e) {
+      console.error(e);
+      setResult({
+        status: "error",
+        message: "We couldn’t reach the trust service. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -123,7 +151,8 @@ export default function Home() {
           <span className="text-gradient">scan XRP wallets & projects</span>
         </h1>
         <p className="mt-2 text-center text-sm text-slate-400">
-          Paste a wallet or website. We’ll check common risk signals and show a simple verdict you can trust.
+          Paste a wallet or website. We’ll check common risk signals and show a
+          simple verdict you can trust.
         </p>
 
         {/* Mode toggle */}
@@ -134,7 +163,9 @@ export default function Home() {
                 key={m}
                 onClick={() => setMode(m)}
                 className={`px-3 py-1.5 text-sm rounded-xl transition ${
-                  mode === m ? "bg-slate-900 shadow text-white" : "text-slate-300 opacity-80"
+                  mode === m
+                    ? "bg-slate-900 shadow text-white"
+                    : "text-slate-300 opacity-80"
                 }`}
               >
                 {m === "auto" ? "Auto" : m === "wallet" ? "Wallet" : "Project"}
@@ -163,7 +194,11 @@ export default function Home() {
             onClick={() => handleScan()}
             disabled={loading || !effectiveType}
             aria-busy={loading ? "true" : "false"}
-            title={!effectiveType ? "Paste a wallet or website first" : "Run trust scan"}
+            title={
+              !effectiveType
+                ? "Paste a wallet or website first"
+                : "Run trust scan"
+            }
             className={`btn-glow btn-glow--pulse rounded-xl px-6 py-3 font-semibold
                         text-slate-900 bg-cyan-500 shadow
                         hover:bg-cyan-400 focus:outline-none
@@ -178,7 +213,9 @@ export default function Home() {
         <div className="mt-2 text-center text-xs text-slate-400">
           {effectiveType === "wallet" && "Detected: Wallet address"}
           {effectiveType === "project" && "Detected: Project / Website"}
-          {!effectiveType && input && "Tip: paste a wallet (r...) or a website like example.com"}
+          {!effectiveType &&
+            input &&
+            "Tip: paste a wallet (r...) or a website like example.com"}
         </div>
 
         {/* Recent */}
@@ -206,7 +243,11 @@ export default function Home() {
                     handleScan(r.q);
                   }}
                   className={`rounded-full border px-3 py-1 text-xs transition
-                    ${r.type === "wallet" ? "border-cyan-500/40" : "border-emerald-500/40"}
+                    ${
+                      r.type === "wallet"
+                        ? "border-cyan-500/40"
+                        : "border-emerald-500/40"
+                    }
                     ${
                       r.verdict === "green"
                         ? "bg-emerald-500/10"
@@ -217,7 +258,8 @@ export default function Home() {
                     hover:bg-slate-700/60`}
                   title={new Date(r.ts).toLocaleString()}
                 >
-                  {r.type === "wallet" ? "W:" : "P:"} {shorten(r.q)} {r.verdict ? `• ${r.verdict}` : ""}
+                  {r.type === "wallet" ? "W:" : "P:"} {shorten(r.q)}{" "}
+                  {r.verdict ? `• ${r.verdict}` : ""}
                 </button>
               ))}
             </div>
@@ -232,7 +274,9 @@ export default function Home() {
             <div className="mx-auto max-w-2xl rounded-xl border border-rose-500/60 bg-rose-950/40 px-5 py-3 text-left text-rose-200">
               <p className="font-semibold">We couldn’t complete the check</p>
               <p className="text-sm opacity-90">{result.message}</p>
-              <p className="mt-1 text-[11px] text-rose-300/80">Tip: check your internet and try again.</p>
+              <p className="mt-1 text-[11px] text-rose-300/80">
+                Tip: check your internet and try again.
+              </p>
             </div>
           )}
 
@@ -244,7 +288,7 @@ export default function Home() {
                 query={
                   (result.details?.address as string) ||
                   (result.details?.domain as string) ||
-                  qParam /* ✅ safe, SSR-friendly */
+                  qParam
                 }
                 kind={result.details?.address ? "wallet" : "project"}
               />
