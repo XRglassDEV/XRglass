@@ -2,11 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Eventueel: laat browser weten dat er dark/light schema is */
+/* Let the browser know both light/dark are supported */
 html {
   color-scheme: light dark;
 }
-/* globals.css (append at bottom) */
+
+/* Subtle grid background utility */
 .bg-grid-slate {
   background-image:
     linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px),
@@ -14,15 +15,57 @@ html {
   background-size: 24px 24px;
 }
 
+/* Gradient text utility */
 .text-gradient {
   background: linear-gradient(to right, #38bdf8, #22d3ee, #34d399);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-/* XRglass UI refinements */
+
+/* Card base utility */
 .card-base {
   @apply rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm;
   @apply bg-white dark:bg-slate-900/40;
   @apply transition-colors duration-300;
+}
+
+/* === XRglass: glowing CTA button === */
+@keyframes glowPulse {
+  0%, 100% { opacity: .65; transform: scale(1); filter: blur(18px); }
+  50%      { opacity: 1;    transform: scale(1.04); filter: blur(22px); }
+}
+
+@layer utilities {
+  .btn-glow {
+    position: relative;
+    isolation: isolate; /* keep glow behind label */
+    transition: transform .15s ease, background-color .15s ease;
+  }
+  .btn-glow:active { transform: translateY(1px) scale(.99); }
+
+  .btn-glow::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    border-radius: inherit;
+    background:
+      radial-gradient(120% 120% at 50% 20%, rgba(34,211,238,.55), transparent 60%),
+      radial-gradient(120% 120% at 20% 120%, rgba(16,185,129,.45), transparent 55%);
+    opacity: .65;
+    filter: blur(18px);
+    transition: opacity .2s ease, filter .2s ease, transform .2s ease;
+    pointer-events: none;
+  }
+
+  .btn-glow:hover::before { opacity: .95; filter: blur(22px); }
+  .btn-glow:disabled::before { opacity: .25; }
+
+  .btn-glow--pulse::before { animation: glowPulse 3.2s ease-in-out infinite; }
+  .btn-glow:disabled.btn-glow--pulse::before { animation-duration: 5s; opacity: .2; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-glow--pulse::before { animation: none; }
+  }
 }

@@ -162,7 +162,13 @@ export default function Home() {
           <button
             onClick={() => handleScan()}
             disabled={loading || !effectiveType}
-            className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-slate-900 shadow hover:bg-cyan-400 disabled:opacity-50"
+            aria-busy={loading ? "true" : "false"}
+            title={!effectiveType ? "Paste a wallet or website first" : "Run trust scan"}
+            className={`btn-glow btn-glow--pulse rounded-xl px-6 py-3 font-semibold
+                        text-slate-900 bg-cyan-500 shadow
+                        hover:bg-cyan-400 focus:outline-none
+                        focus-visible:ring-2 focus-visible:ring-cyan-300
+                        disabled:opacity-60 disabled:cursor-not-allowed`}
           >
             {loading ? "Verifying…" : "Start Scan"}
           </button>
