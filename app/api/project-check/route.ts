@@ -117,7 +117,7 @@ async function handle(domainRaw: string) {
   ];
 
   const points = computeScore(signals);
-  const verdict = verdictFromPoints(points);
+  const verdict = verdictFromPoints(typeof points === "number" ? points : (points?.total ?? 0));
 
   const reasons: string[] = [];
   if (!httpsOk) reasons.push("HTTPS not detected (+1)");
