@@ -1,12 +1,15 @@
 // app/api/project-check/route.ts
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { computeScore } from "@/lib/scoring";
 
-export const runtime = "edge";
+// ✅ run on Node, never cached, always dynamic
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 /* ---------------------- trusted ecosystem domains ---------------------- */
-// Feel free to expand this list any time.
-const TRUSTED_DOMAINS = new Set([
+const TRUSTED_DOMAINS = new Set<string>([
   "xrpl.org",
   "xrplf.org",
   "ripple.com",
@@ -21,13 +24,13 @@ function cleanDomain(input: string) {
   return input.replace(/^https?:\/\//i, "").replace(/\/+$/, "").trim().toLowerCase();
 }
 
-// Normalize for matching (drops leading www.)
+// drop leading www. for matching
 function normalizeForMatch(d: string) {
   const clean = cleanDomain(d);
   return clean.startsWith("www.") ? clean.slice(4) : clean;
 }
 
-// HEAD with fallback to GET, with a small timeout
+// HEAD with fallback to GET, with a small timeout and a UA header
 async function okWithTimeout(
   url: string,
   method: "HEAD" | "GET" = "HEAD",
@@ -36,7 +39,14 @@ async function okWithTimeout(
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), ms);
   try {
-    const res = await fetch(url, { method, signal: controller.signal });
+    const res = await fetch(url, {
+      method,
+      signal: controller.signal,
+      headers: {
+        "user-agent": "XRglass/1.0 (+https://xrglass.vercel.app)",
+        accept: "text/plain,*/*",
+      },
+    });
     return res.ok;
   } catch {
     return false;
@@ -60,7 +70,7 @@ async function checkToml(domain: string) {
 
   for (const u of candidates) {
     if (await headOk(u)) {
-      return { found: true, url: u };
+      return { found: true, url: u as string };
     }
   }
   return { found: false, url: null as string | null };
@@ -76,8 +86,8 @@ function verdictFromPoints(points: number): "green" | "orange" | "red" {
 
 async function handle(domainRaw: string) {
   if (!domainRaw) {
-    return new Response(
-      JSON.stringify({ status: "error", message: "No domain provided" }),
+    return NextResponse.json(
+      { status: "error", message: "No domain provided" },
       { status: 400 }
     );
   }
@@ -85,29 +95,23 @@ async function handle(domainRaw: string) {
   const domain = cleanDomain(domainRaw);
   const matchKey = normalizeForMatch(domain);
 
-  /* ---------- short-circuit for trusted ecosystem domains ---------- */
+  // Short-circuit for ecosystem allowlist
   if (TRUSTED_DOMAINS.has(matchKey)) {
-    return new Response(
-      JSON.stringify({
+    return NextResponse.json(
+      {
         status: "ok",
         verdict: "green",
         points: 0,
         reasons: ["Verified ecosystem domain (allowlist)"],
-        signals: [
-          { key: "ecosystem_allowlist", ok: true, weight: -999 },
-        ],
-        details: {
-          domain,
-          trusted: true,
-        },
-        disclaimer:
-          "Results are indicative only. XRglass cannot guarantee 100% accuracy.",
-      }),
-      { status: 200, headers: { "content-type": "application/json" } }
+        signals: [{ key: "ecosystem_allowlist", ok: true, weight: -999 }],
+        details: { domain, trusted: true },
+        disclaimer: "Results are indicative only. XRglass cannot guarantee 100% accuracy.",
+      },
+      { status: 200 }
     );
   }
 
-  /* -------------------- normal heuristic evaluation -------------------- */
+  // Heuristics
   const httpsOk = await headOk(`https://${domain}`);
   const toml = await checkToml(domain);
 
@@ -116,16 +120,24 @@ async function handle(domainRaw: string) {
     { key: "toml_present", ok: toml.found, weight: 2 },
   ];
 
-  const points = computeScore(signals);
-  const verdict = verdictFromPoints(typeof points === "number" ? points : (points?.total ?? 0));
+  // computeScore may return a number OR an object; normalize to a number
+  const raw = computeScore(signals) as unknown;
+  const points =
+    typeof raw === "number"
+      ? raw
+      : typeof (raw as any)?.total === "number"
+      ? (raw as any).total
+      : 0;
+
+  const verdict = verdictFromPoints(points);
 
   const reasons: string[] = [];
   if (!httpsOk) reasons.push("HTTPS not detected (+1)");
   if (!toml.found) reasons.push("xrp.toml not found (+2)");
   else reasons.push("xrp.toml found (0)");
 
-  return new Response(
-    JSON.stringify({
+  return NextResponse.json(
+    {
       status: "ok",
       verdict,
       points,
@@ -138,10 +150,9 @@ async function handle(domainRaw: string) {
         tomlUrl: toml.url,
         trusted: false,
       },
-      disclaimer:
-        "Results are indicative only. XRglass cannot guarantee 100% accuracy.",
-    }),
-    { status: 200, headers: { "content-type": "application/json" } }
+      disclaimer: "Results are indicative only. XRglass cannot guarantee 100% accuracy.",
+    },
+    { status: 200 }
   );
 }
 
@@ -149,14 +160,11 @@ async function handle(domainRaw: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { domain } = await req.json();
-    return handle(domain);
+    const { domain } = (await req.json()) as { domain?: string };
+    return handle(domain ?? "");
   } catch (e: any) {
-    return new Response(
-      JSON.stringify({
-        status: "error",
-        message: e?.message || "project scan failed",
-      }),
+    return NextResponse.json(
+      { status: "error", message: e?.message || "project scan failed" },
       { status: 400 }
     );
   }
@@ -165,7 +173,6 @@ export async function POST(req: NextRequest) {
 // Also support GET ?domain=example.com for browser testing
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const domain =
-    searchParams.get("domain") || searchParams.get("url") || "";
+  const domain = searchParams.get("domain") || searchParams.get("url") || "";
   return handle(domain);
 }
