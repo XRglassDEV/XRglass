@@ -29,8 +29,9 @@ export default function Home() {
   const [result, setResult] = useState<ApiResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [recent, setRecent] = useState<RecentItem[]>([]);
-  const [qParam, setQParam] = useState<string>("");
+  const [qParam, setQParam] = useState<string>(""); // ✅ safe ?q= for SSR
 
+  // load recents
   useEffect(() => {
     try {
       const raw = localStorage.getItem(RECENT_KEY);
@@ -38,15 +39,17 @@ export default function Home() {
     } catch {}
   }, []);
 
+  // read ?q= and auto-scan
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const q = sp.get("q") || "";
-    setQParam(q);
+    setQParam(q); // ✅ safe state, used later
     if (q) {
       setInput(q);
       setTimeout(() => handleScan(q), 0);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const detectedType = useMemo<"wallet" | "project" | null>(() => {
@@ -81,13 +84,15 @@ export default function Home() {
       const data = (await res.json()) as ApiResult;
       setResult(data);
 
+      // update shareable ?q=
       if (typeof window !== "undefined") {
         const sp = new URLSearchParams(window.location.search);
         sp.set("q", q);
         window.history.replaceState(null, "", `?${sp.toString()}`);
-        setQParam(q);
+        setQParam(q); // keep in state for TrustStats
       }
 
+      // save to recents
       const item: RecentItem = {
         q,
         type: kind,
@@ -138,7 +143,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Input + Button */}
+        {/* Input */}
         <div className="flex justify-center gap-3">
           <input
             type="text"
@@ -158,8 +163,12 @@ export default function Home() {
             onClick={() => handleScan()}
             disabled={loading || !effectiveType}
             aria-busy={loading ? "true" : "false"}
-            title={!effectiveType ? 'Paste a wallet or website first' : 'Run trust scan'}
-            className="btn-glass btn-glass--shine px-8 py-3 text-sm md:text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            title={!effectiveType ? "Paste a wallet or website first" : "Run trust scan"}
+            className={`btn-glow btn-glow--pulse rounded-xl px-6 py-3 font-semibold
+                        text-slate-900 bg-cyan-500 shadow
+                        hover:bg-cyan-400 focus:outline-none
+                        focus-visible:ring-2 focus-visible:ring-cyan-300
+                        disabled:opacity-60 disabled:cursor-not-allowed`}
           >
             {loading ? "Verifying…" : "Start Scan"}
           </button>
@@ -230,11 +239,12 @@ export default function Home() {
           {result && result.status === "ok" && (
             <div className="mx-auto w-full max-w-2xl">
               <ResultCard result={result} />
+              {/* Lite social proof */}
               <TrustStats
                 query={
                   (result.details?.address as string) ||
                   (result.details?.domain as string) ||
-                  qParam
+                  qParam /* ✅ safe, SSR-friendly */
                 }
                 kind={result.details?.address ? "wallet" : "project"}
               />
