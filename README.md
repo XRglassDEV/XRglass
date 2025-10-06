@@ -3,7 +3,7 @@
 **XRglass** is a free, open-source tool to **scan XRP tokens, wallets, and projects** for risk.  
 It gives a simple **Trust Score (Green / Orange / Red)** with transparent evidence — helping the XRP community avoid scams, rug pulls, and risky issuers.
 
-🌐 Live: [xtrustscore.vercel.app](https://xtrustscore.vercel.app)
+🌐 Live: [xrglass.vercel.app](https://xrglass.vercel.app)
 
 ---
 
