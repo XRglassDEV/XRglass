@@ -1,8 +1,11 @@
 // app/api/check/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { Client } from "xrpl";
+
 import { ScoreResult, Reason as NormReason, verdictFromScore } from "@/lib/score";
 
 // ---- Your existing types ----

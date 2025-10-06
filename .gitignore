@@ -15,3 +15,5 @@ out
 # archives or temporary stuff
 *.zip
 *.tar
+
+/lib/generated/prisma
