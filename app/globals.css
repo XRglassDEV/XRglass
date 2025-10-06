@@ -6,3 +6,23 @@
 html {
   color-scheme: light dark;
 }
+/* globals.css (append at bottom) */
+.bg-grid-slate {
+  background-image:
+    linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.text-gradient {
+  background: linear-gradient(to right, #38bdf8, #22d3ee, #34d399);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* XRglass UI refinements */
+.card-base {
+  @apply rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm;
+  @apply bg-white dark:bg-slate-900/40;
+  @apply transition-colors duration-300;
+}

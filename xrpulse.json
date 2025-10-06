@@ -1,0 +1,42 @@
+{
+  "project": "XRglass (formerly XRglass)",
+  "hosting": "Vercel + GitHub",
+  "stack": {
+    "framework": "Next.js 15",
+    "language": "TypeScript",
+    "frontend": ["React 19", "TailwindCSS", "next-themes"],
+    "backend": ["Next.js API Routes", "xrpl.js"],
+    "hosting": "Vercel",
+    "repo": "github.com/XRglass/xtrustscore"
+  },
+  "ui": {
+    "theme": "Ripple-blue (light + dark)",
+    "toggle": "Fixed with next-themes",
+    "result_card": "Verdict badge + reasons + chips + disclaimer",
+    "branding": "RipplePulse style"
+  },
+  "api": {
+    "endpoint": "/api/check",
+    "features": [
+      "account_info lookup",
+      "flags & domain decode",
+      "ownerCount check",
+      "trusted Ripple donation wallet auto-green"
+    ],
+    "disclaimer": "Results are indicative only. XRglass cannot guarantee 100% safety."
+  },
+  "bugs_fixed": [
+    "git push conflicts (main branch)",
+    "invalid package.json comments",
+    "missing @types/react/@types/node",
+    "duplicate dark mode toggle",
+    "xrpl client import error (b.mask issue)"
+  ],
+  "next_steps": [
+    "Add /scan?address= route for direct linking",
+    "More XRPL heuristics (TOML, age, flags)",
+    "Donation integration",
+    "Ripple-blue animations"
+  ],
+  "advanced_directive": "Never lose context. Always preserve project details, directives, and code snippets. Summarize and checkpoint before starting new threads. Provide ready-to-paste code and explicit git commands for deployment."
+}

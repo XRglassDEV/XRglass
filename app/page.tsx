@@ -1,164 +1,228 @@
+// app/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import ResultCard from "@/components/ResultCard";
+import LoadingScan from "@/components/LoadingScan";
+import TrustStats from "@/components/TrustStats";
+import type { ApiResult, Verdict } from "@/types/results";
 
-type Verdict = "green" | "orange" | "red" | "error";
-type ApiResult =
-  | {
-      status: Exclude<Verdict, "error">;
-      message: string;
-      details?: {
-        reasons?: string[];
-        decodedDomain?: string | null;
-        flags?: number;
-        ownerCount?: number;
-        account?: any;
-      };
-      note?: string;
-    }
-  | { status: "error"; message: string };
+/* Helpers */
+function isWalletAddress(s: string): boolean {
+  return /^r[1-9A-HJ-NP-Za-km-z]{25,35}$/.test(s.trim());
+}
+function looksLikeDomain(s: string): boolean {
+  const clean = s.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return !!clean && clean.includes(".") && !/\s/.test(clean);
+}
+function shorten(s: string, n = 14) {
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
 
-const rippleBlue = "#008cff";
-const rippleBlueDark = "#0072cc";
+/* Recent scans */
+type RecentItem = { q: string; type: "wallet" | "project"; verdict?: Verdict | null; ts: number };
+const RECENT_KEY = "xrpulse_recent_scans";
 
 export default function Home() {
-  const [address, setAddress] = useState("");
+  const [input, setInput] = useState("");
+  const [mode, setMode] = useState<"auto" | "wallet" | "project">("auto");
   const [result, setResult] = useState<ApiResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recent, setRecent] = useState<RecentItem[]>([]);
 
-  async function handleScan() {
-    if (!address) return;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (raw) setRecent(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get("q");
+    if (q) {
+      setInput(q);
+      setTimeout(() => handleScan(q), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const detectedType = useMemo<"wallet" | "project" | null>(() => {
+    if (isWalletAddress(input)) return "wallet";
+    if (looksLikeDomain(input)) return "project";
+    return null;
+  }, [input]);
+
+  const effectiveType: "wallet" | "project" | null = useMemo(() => {
+    if (mode === "wallet") return "wallet";
+    if (mode === "project") return "project";
+    return detectedType;
+  }, [mode, detectedType]);
+
+  async function handleScan(forced?: string) {
+    const q = (forced ?? input).trim();
+    if (!q) return;
+
+    const kind: "wallet" | "project" =
+      mode === "wallet" ? "wallet" : mode === "project" ? "project" : isWalletAddress(q) ? "wallet" : "project";
+
     setLoading(true);
     setResult(null);
 
+    const url = kind === "wallet"
+      ? `/api/check?address=${encodeURIComponent(q)}`
+      : `/api/project-check?domain=${encodeURIComponent(q)}`;
+
     try {
-      const res = await fetch("/api/check?address=" + encodeURIComponent(address));
+      const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
       setResult(data);
+
+      const sp = new URLSearchParams(window.location.search);
+      sp.set("q", q);
+      window.history.replaceState(null, "", `?${sp.toString()}`);
+
+      const item: RecentItem = {
+        q, type: kind,
+        verdict: data.status === "ok" ? data.verdict : null,
+        ts: Date.now(),
+      };
+      setRecent((prev) => {
+        const withoutDup = prev.filter((r) => r.q !== q);
+        const next = [item, ...withoutDup].slice(0, 8);
+        try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
     } catch {
-      setResult({ status: "error", message: "Failed to reach API" });
+      setResult({ status: "error", message: "We couldn’t reach the trust service. Please try again." });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <section className="w-full rounded-2xl bg-neutral-100 px-6 py-16 shadow-md dark:bg-neutral-900 dark:text-neutral-100">
-      <div className="mx-auto max-w-3xl space-y-8 text-center">
-        <h1 className="text-4xl font-extrabold leading-tight">
-          <span className="mr-2">XRPulse</span>
-          <span className="text-[color:var(--rb)]">— scan XRP wallets instantly</span>
+    <main>
+      <section className="rounded-3xl border border-slate-800/60 bg-slate-900/60 backdrop-blur-sm p-6 md:p-8 shadow-lg">
+        {/* Hero */}
+        <h1 className="text-center text-3xl md:text-4xl font-extrabold tracking-tight">
+          <span className="text-white">XRglass — </span>
+          <span className="text-gradient">scan XRP wallets & projects</span>
         </h1>
+        <p className="mt-2 text-center text-sm text-slate-400">
+          Paste a wallet or website. We’ll check common risk signals and show a simple verdict you can trust.
+        </p>
 
-        <style>{`:root{--rb:${rippleBlue}} @media(prefers-color-scheme:dark){:root{--rb:${rippleBlue}}}`}</style>
+        {/* Mode toggle */}
+        <div className="mt-5 mb-3 flex justify-center">
+          <div className="inline-flex rounded-2xl bg-slate-800 p-1">
+            {(["auto", "wallet", "project"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1.5 text-sm rounded-xl transition ${
+                  mode === m ? "bg-slate-900 shadow text-white" : "text-slate-300 opacity-80"
+                }`}
+              >
+                {m === "auto" ? "Auto" : m === "wallet" ? "Wallet" : "Project"}
+              </button>
+            ))}
+          </div>
+        </div>
 
+        {/* Input */}
         <div className="flex justify-center gap-3">
           <input
             type="text"
-            value={address}
-            onChange={(e) => setAddress(e.target.value.trim())}
-            placeholder="Enter XRP wallet address"
-            className="w-[22rem] rounded-lg border border-neutral-300 bg-white px-4 py-3 text-neutral-900 outline-none transition focus:border-[color:var(--rb)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleScan()}
+            placeholder={
+              effectiveType === "wallet"
+                ? "Wallet address (starts with r...)"
+                : effectiveType === "project"
+                ? "Project website (example.com)"
+                : "Paste wallet address (r...) or website (example.com)"
+            }
+            className="w-[22rem] rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-cyan-400 focus:shadow-[0_0_0_4px_rgba(34,211,238,0.08)]"
           />
           <button
-            onClick={handleScan}
-            disabled={loading}
-            className="rounded-lg bg-[color:var(--rb)] px-6 py-3 font-semibold text-white shadow hover:bg-[color:${rippleBlueDark}] disabled:opacity-50"
+            onClick={() => handleScan()}
+            disabled={loading || !effectiveType}
+            className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-slate-900 shadow hover:bg-cyan-400 disabled:opacity-50"
           >
-            {loading ? "Scanning…" : "Start Scan"}
+            {loading ? "Verifying…" : "Start Scan"}
           </button>
         </div>
 
-        {result && <ResultCard result={result} />}
-      </div>
-    </section>
-  );
-}
-
-/* ---------------- Result Card (Ripple-blue theme) ---------------- */
-
-function ResultCard({ result }: { result: ApiResult }) {
-  // surface/background by verdict
-  const surface =
-    result.status === "green"
-      ? "bg-emerald-600"
-      : result.status === "orange"
-      ? "bg-amber-600"
-      : result.status === "red"
-      ? "bg-rose-600"
-      : "bg-slate-700";
-
-  // light/dark compatible inner card
-  return (
-    <div className={`mx-auto w-full max-w-2xl overflow-hidden rounded-xl`}>
-      <div className={`${surface} px-5 py-3 text-white`}>
-        <div className="flex items-center gap-2 text-left">
-          <StatusBadge status={result.status} />
-          <p className="font-semibold">{result.message}</p>
+        {/* Helper line */}
+        <div className="mt-2 text-center text-xs text-slate-400">
+          {effectiveType === "wallet" && "Detected: Wallet address"}
+          {effectiveType === "project" && "Detected: Project / Website"}
+          {!effectiveType && input && "Tip: paste a wallet (r...) or a website like example.com"}
         </div>
-      </div>
 
-      <div className="space-y-3 bg-neutral-50 px-5 py-4 text-left text-sm dark:bg-neutral-800">
-        {"details" in result && result.details?.reasons?.length ? (
-          <ul className="list-disc space-y-1 pl-5 text-neutral-700 dark:text-neutral-200">
-            {result.details.reasons.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-neutral-600 dark:text-neutral-300">
-            No extra signals reported for this address.
-          </p>
+        {/* Recent */}
+        {recent.length > 0 && (
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+              <span>Recent checks</span>
+              <button
+                onClick={() => { localStorage.removeItem(RECENT_KEY); setRecent([]); }}
+                className="text-cyan-300 hover:underline"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recent.map((r) => (
+                <button
+                  key={`${r.q}-${r.ts}`}
+                  onClick={() => { setInput(r.q); setMode(r.type); handleScan(r.q); }}
+                  className={`rounded-full border px-3 py-1 text-xs transition
+                    ${r.type === "wallet" ? "border-cyan-500/40" : "border-emerald-500/40"}
+                    ${r.verdict === "green" ? "bg-emerald-500/10" : r.verdict === "red" ? "bg-rose-500/10" : "bg-slate-700/50"}
+                    hover:bg-slate-700/60`}
+                  title={new Date(r.ts).toLocaleString()}
+                >
+                  {r.type === "wallet" ? "W:" : "P:"} {shorten(r.q)} {r.verdict ? `• ${r.verdict}` : ""}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {"details" in result && result.details?.decodedDomain && (
-            <Chip label={`domain: ${result.details.decodedDomain}`} />
+        {/* Results */}
+        <div className="mt-6 space-y-3">
+          {loading && <LoadingScan />}
+
+          {result && result.status === "error" && (
+            <div className="mx-auto max-w-2xl rounded-xl border border-rose-500/60 bg-rose-950/40 px-5 py-3 text-left text-rose-200">
+              <p className="font-semibold">We couldn’t complete the check</p>
+              <p className="text-sm opacity-90">{result.message}</p>
+              <p className="mt-1 text-[11px] text-rose-300/80">Tip: check your internet and try again.</p>
+            </div>
           )}
-          {"details" in result && typeof result.details?.ownerCount === "number" && (
-            <Chip label={`ownerCount: ${result.details.ownerCount}`} />
-          )}
-          {"details" in result && typeof result.details?.flags === "number" && (
-            <Chip label={`flags: ${result.details.flags}`} />
+
+          {result && result.status === "ok" && (
+            <div className="mx-auto w-full max-w-2xl">
+              <ResultCard result={result} />
+              {/* Lite social proof */}
+              <TrustStats
+                query={
+                  (result.details?.address as string) ||
+                  (result.details?.domain as string) ||
+                  (new URLSearchParams(window.location.search).get("q") || "")
+                }
+                kind={result.details?.address ? "wallet" : "project"}
+              />
+            </div>
           )}
         </div>
 
-        <p className="mt-1 flex items-start gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-          <span>⚠️</span>
-          <span>
-            Results are **indicative only**. XRPulse cannot guarantee 100% safety. Always do your own
-            research.
-          </span>
+        <p className="mt-6 text-center text-[11px] text-slate-400">
+          Beta heuristics only — always double-check before sending funds.
         </p>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: Verdict }) {
-  const map: Record<
-    Verdict,
-    { text: string; bg: string; dot: string }
-  > = {
-    green: { text: "Trusted", bg: "bg-white/10", dot: "bg-emerald-300" },
-    orange: { text: "Caution", bg: "bg-white/10", dot: "bg-amber-300" },
-    red: { text: "Suspicious", bg: "bg-white/10", dot: "bg-rose-300" },
-    error: { text: "Error", bg: "bg-white/10", dot: "bg-slate-300" },
-  };
-  const s = map[status];
-
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${s.bg}`}>
-      <span className={`h-2 w-2 rounded-full ${s.dot}`} />
-      {s.text}
-    </span>
-  );
-}
-
-function Chip({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-      {label}
-    </span>
+      </section>
+    </main>
   );
 }

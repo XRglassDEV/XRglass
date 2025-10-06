@@ -1,6 +1,6 @@
-# XTrustScore 🔐
+# XRglass 🔐
 
-**XTrustScore** is a free, open-source tool to **scan XRP tokens, wallets, and projects** for risk.  
+**XRglass** is a free, open-source tool to **scan XRP tokens, wallets, and projects** for risk.  
 It gives a simple **Trust Score (Green / Orange / Red)** with transparent evidence — helping the XRP community avoid scams, rug pulls, and risky issuers.
 
 🌐 Live: [xtrustscore.vercel.app](https://xtrustscore.vercel.app)
@@ -37,7 +37,7 @@ It gives a simple **Trust Score (Green / Orange / Red)** with transparent eviden
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/XTrustScore/xtrustscore.git
+   git clone https://github.com/XRglass/xtrustscore.git
    cd xtrustscore
 
 2. Install dependencies:
@@ -63,7 +63,7 @@ vercel --prod
 
 
 ⚠️ Disclaimer
-XTrustScore provides heuristic indicators only.
+XRglass provides heuristic indicators only.
 It is not financial advice, and cannot guarantee safety.
 Always do your own research.
 Not affiliated with Ripple or the XRPL Foundation.
