@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck",
     "release": "standard-version",
+    "postrelease": "git push --follow-tags origin main",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
