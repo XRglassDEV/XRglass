@@ -40,5 +40,8 @@
   "overrides": {
     "bufferutil": "0.0.0-unsupported",
     "utf-8-validate": "0.0.0-unsupported"
+  },
+  "standard-version": {
+    "releaseCommitMessageFormat": "chore(release): {{currentTag}}"
   }
 }
