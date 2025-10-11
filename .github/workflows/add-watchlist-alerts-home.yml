@@ -1,0 +1,335 @@
+name: Add Watchlist + Alerts on Home (Auto Push)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  add-watchlist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Git identity
+        run: |
+          git config user.name "MiaX"
+          git config user.email "miasatox@protonmail.com"
+
+      - name: Ensure folders
+        run: |
+          mkdir -p app/api/watchlist app/api/watchlist/check lib
+
+      - name: Add server store (Supabase if env present, else in-memory)
+        shell: bash
+        run: |
+          cat > lib/watchlist-store.ts <<'TS'
+          // lib/watchlist-store.ts
+          // Storage strategy:
+          // - If SUPABASE_URL + SUPABASE_SERVICE_ROLE exist => use Supabase table "watchlist"
+          // - Else fall back to in-memory (ephemeral) with warning
+          export type WatchType = "wallet" | "project";
+          export type Threshold = "green" | "orange" | "red";
+          export type WatchItem = {
+            id: string;              // uuid
+            type: WatchType;         // wallet or project
+            target: string;          // address or domain
+            threshold: Threshold;    // notify when score >= threshold (red>orange>green)
+            webhook?: string | null; // optional POST url to notify
+            createdAt: string;
+          };
+
+          const hasSupabase = !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE;
+
+          // Lazy import to avoid bundling if not set
+          async function getSupabase() {
+            const { createClient } = await import("@supabase/supabase-js");
+            return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          }
+
+          // Very small in-memory fallback (reset each cold start)
+          const MEMORY: WatchItem[] = [];
+
+          export async function listItems(): Promise<WatchItem[]> {
+            if (hasSupabase) {
+              const supa = await getSupabase();
+              const { data, error } = await supa.from("watchlist").select("*").order("createdAt", { ascending: false });
+              if (error) throw error;
+              return data as WatchItem[];
+            }
+            return MEMORY;
+          }
+
+          export async function addItem(item: WatchItem): Promise<void> {
+            if (hasSupabase) {
+              const supa = await getSupabase();
+              const { error } = await supa.from("watchlist").insert(item);
+              if (error) throw error;
+              return;
+            }
+            MEMORY.unshift(item);
+          }
+
+          export async function removeItem(id: string): Promise<void> {
+            if (hasSupabase) {
+              const supa = await getSupabase();
+              const { error } = await supa.from("watchlist").delete().eq("id", id);
+              if (error) throw error;
+              return;
+            }
+            const i = MEMORY.findIndex(x => x.id === id);
+            if (i >= 0) MEMORY.splice(i, 1);
+          }
+
+          export function supabaseEnabled(): boolean { return hasSupabase; }
+          TS
+
+      - name: Add API routes (CRUD + checker)
+        shell: bash
+        run: |
+          cat > app/api/watchlist/route.ts <<'TS'
+          // app/api/watchlist/route.ts
+          export const runtime = "nodejs";
+          import { NextResponse } from "next/server";
+          import { addItem, listItems, removeItem, supabaseEnabled } from "../../../lib/watchlist-store";
+          import { randomUUID } from "crypto";
+
+          type Body = {
+            type?: "wallet"|"project",
+            target?: string,
+            threshold?: "green"|"orange"|"red",
+            webhook?: string|null
+          };
+
+          function sanitizeTarget(t: string) {
+            const s = (t||"").trim();
+            if (/^r[1-9A-HJ-NP-Za-km-z]{24,35}$/.test(s)) return s; // wallet
+            // domain-ish
+            try {
+              const u = new URL(s.startsWith("http")?s:`https://${s}`);
+              return u.hostname.toLowerCase();
+            } catch { return s.toLowerCase(); }
+          }
+
+          export async function GET() {
+            const items = await listItems();
+            return NextResponse.json({ status:"ok", supabase: supabaseEnabled(), items }, { status:200 });
+          }
+
+          export async function POST(req: Request) {
+            try {
+              const b = await req.json() as Body;
+              const type = (b.type=== "project" ? "project":"wallet") as "wallet"|"project";
+              const target = sanitizeTarget(String(b.target||""));
+              const threshold = (b.threshold || "orange") as any;
+              const webhook = b.webhook ? String(b.webhook) : null;
+
+              if (!target) return NextResponse.json({ status:"error", message:"Missing target" }, { status:400 });
+
+              const item = {
+                id: randomUUID(),
+                type, target, threshold, webhook,
+                createdAt: new Date().toISOString()
+              };
+              await addItem(item as any);
+              return NextResponse.json({ status:"ok", item }, { status:200 });
+            } catch (e:any) {
+              return NextResponse.json({ status:"error", message: e?.message || "Bad request" }, { status:400 });
+            }
+          }
+
+          export async function DELETE(req: Request) {
+            const { searchParams } = new URL(req.url);
+            const id = searchParams.get("id") || "";
+            if (!id) return NextResponse.json({ status:"error", message:"Missing id" }, { status:400 });
+            await removeItem(id);
+            return NextResponse.json({ status:"ok" }, { status:200 });
+          }
+          TS
+
+          cat > app/api/watchlist/check/route.ts <<'TS'
+          // app/api/watchlist/check/route.ts
+          export const runtime = "nodejs";
+          import { NextResponse } from "next/server";
+          import { listItems } from "../../../../lib/watchlist-store";
+
+          // simple rank: red(2) > orange(1) > green(0)
+          const rank: Record<string, number> = { green:0, orange:1, red:2 };
+
+          async function scanWallet(address: string) {
+            const res = await fetch(`${process.env.PUBLIC_BASE_URL || ""}/api/scan/wallet?address=${encodeURIComponent(address)}`);
+            return res.json();
+          }
+          async function scanDomain(url: string) {
+            const res = await fetch(`${process.env.PUBLIC_BASE_URL || ""}/api/scan/domain?url=${encodeURIComponent(url)}`);
+            return res.json();
+          }
+
+          export async function GET() {
+            const items = await listItems();
+            const results: any[] = [];
+            for (const it of items) {
+              try {
+                const data = it.type === "wallet"
+                  ? await scanWallet(it.target)
+                  : await scanDomain(it.target);
+
+                const verdict = (data?.score || data?.verdict || "green") as "green"|"orange"|"red";
+                const shouldNotify = rank[verdict] >= rank[it.threshold];
+
+                if (shouldNotify && it.webhook) {
+                  try {
+                    await fetch(it.webhook, {
+                      method: "POST",
+                      headers: { "content-type":"application/json" },
+                      body: JSON.stringify({
+                        type: it.type,
+                        target: it.target,
+                        verdict,
+                        scoreValue: data?.scoreValue ?? null,
+                        summary: data?.summary ?? null,
+                        at: new Date().toISOString()
+                      })
+                    });
+                  } catch {}
+                }
+                results.push({ id: it.id, target: it.target, type: it.type, verdict, notified: shouldNotify && !!it.webhook });
+              } catch (e:any) {
+                results.push({ id: it.id, target: it.target, error: e?.message || "scan failed" });
+              }
+            }
+            return NextResponse.json({ status:"ok", items: results }, { status:200 });
+          }
+          TS
+
+      - name: Patch Home UI – add Watchlist section
+        shell: bash
+        run: |
+          cat > app/_watchlist_section.tsx <<'TSX'
+          "use client";
+          import React, { useEffect, useState } from "react";
+
+          type Item = { id:string; type:"wallet"|"project"; target:string; threshold:"green"|"orange"|"red"; webhook?:string|null; createdAt:string };
+          const fetchJSON = (u:string, init?:RequestInit)=> fetch(u, init).then(r=>r.json());
+
+          export default function WatchlistSection(){
+            const [items, setItems] = useState<Item[]>([]);
+            const [type, setType] = useState<"wallet"|"project">("wallet");
+            const [target, setTarget] = useState("");
+            const [threshold, setThreshold] = useState<"green"|"orange"|"red">("orange");
+            const [webhook, setWebhook] = useState("");
+
+            const load = async ()=> {
+              const j = await fetchJSON("/api/watchlist");
+              setItems(j.items||[]);
+            };
+            useEffect(()=>{ load(); },[]);
+
+            const add = async ()=>{
+              const j = await fetchJSON("/api/watchlist",{
+                method:"POST",
+                headers:{ "content-type":"application/json" },
+                body: JSON.stringify({ type, target, threshold, webhook: webhook.trim() || null })
+              });
+              if(j.status==="ok"){ setTarget(""); setWebhook(""); load(); }
+              else alert(j.message||"Failed");
+            };
+            const remove = async (id:string)=>{
+              const j = await fetchJSON(`/api/watchlist?id=${encodeURIComponent(id)}`,{ method:"DELETE" });
+              if(j.status==="ok") load();
+            };
+            const runCheck = async ()=>{
+              const j = await fetchJSON("/api/watchlist/check");
+              alert(`Checked ${j.items?.length||0} items`);
+            };
+
+            return (
+              <section className="mt-10 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Watchlist & Alerts</h2>
+                  <button onClick={runCheck} className="text-xs px-3 py-1 rounded bg-gray-800 hover:bg-gray-700">Run check now</button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Add wallets or domains to your watchlist. Optional: set a webhook URL to receive alerts when risk meets or exceeds your threshold.</p>
+
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-5 gap-2">
+                  <select className="border rounded bg-gray-900 px-2 py-2" value={type} onChange={e=>setType(e.target.value as any)}>
+                    <option value="wallet">Wallet</option>
+                    <option value="project">Project</option>
+                  </select>
+                  <input className="border rounded bg-gray-900 px-3 py-2 md:col-span-2" placeholder={type==="wallet"?"rXXXXXXXXXXXXXXXXXXXX":"example.com"} value={target} onChange={e=>setTarget(e.target.value)} />
+                  <select className="border rounded bg-gray-900 px-2 py-2" value={threshold} onChange={e=>setThreshold(e.target.value as any)}>
+                    <option value="green">green</option>
+                    <option value="orange">orange</option>
+                    <option value="red">red</option>
+                  </select>
+                  <button onClick={add} disabled={!target.trim()} className="rounded bg-cyan-500 text-black font-semibold px-3 py-2 disabled:opacity-50">Add</button>
+                </div>
+
+                <div className="mt-2">
+                  <input className="w-full border rounded bg-gray-900 px-3 py-2 text-xs" placeholder="Optional webhook (POST) — e.g. https://hooks.slack.com/... or https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=..." value={webhook} onChange={e=>setWebhook(e.target.value)} />
+                </div>
+
+                <div className="mt-4">
+                  {items.length===0 ? (
+                    <div className="text-sm text-gray-500">No items yet.</div>
+                  ) : (
+                    <ul className="divide-y divide-gray-800">
+                      {items.map(it=>(
+                        <li key={it.id} className="py-2 flex items-center justify-between">
+                          <div className="text-sm">
+                            <b className="mr-2 uppercase">{it.type[0]}</b>
+                            <span className="text-gray-200">{it.target}</span>
+                            <span className="text-xs ml-2 px-2 py-0.5 rounded bg-gray-800">≥ {it.threshold}</span>
+                            {it.webhook && <span className="text-xs ml-2 text-gray-500">🔔 webhook</span>}
+                          </div>
+                          <button onClick={()=>remove(it.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 hover:bg-red-600/30 text-red-200">Remove</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+            );
+          }
+          TSX
+
+          # If Home exists, import the section; otherwise skip (user already has unified UI)
+          if [ -f "app/page.tsx" ]; then
+            # Append import & placement hook safely
+            if ! grep -q "_watchlist_section" app/page.tsx; then
+              echo 'import WatchlistSection from "./_watchlist_section";' | cat - app/page.tsx > app/page.tsx.new && mv app/page.tsx.new app/page.tsx
+              printf '\n{ /* XRglass Watchlist Section */ }\n<WatchlistSection />\n' >> app/page.tsx
+            fi
+          fi
+
+      - name: Add scheduled checker workflow (runs every 6h)
+        shell: bash
+        run: |
+          mkdir -p .github/workflows
+          cat > .github/workflows/watchlist-cron.yml <<'YML'
+          name: Watchlist Checker (ping production)
+          on:
+            schedule:
+              - cron: "0 */6 * * *"
+            workflow_dispatch:
+          jobs:
+            ping:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Call /api/watchlist/check on production (if PUBLIC_BASE_URL secret set)
+                  env:
+                    BASE: ${{ secrets.XRGLASS_BASE_URL }}
+                  run: |
+                    if [ -z "$BASE" ]; then
+                      echo "XRGLASS_BASE_URL secret not set. Skipping ping."
+                      exit 0
+                    fi
+                    curl -fsS "$BASE/api/watchlist/check" || true
+          YML
+
+      - name: Commit & push
+        run: |
+          git add .
+          git commit -m "feat(watchlist): Home UI section + API (CRUD + checker) + cron"
+          git push origin main
