@@ -79,3 +79,12 @@ Freeze/clawback detection per token
 GitHub repo activity
 
 Scam token blacklist integration
+
+---
+
+## 🧪 Test Pull Requests
+
+This repository occasionally receives test pull requests to verify the end-to-end
+contribution workflow. These PRs may make small documentation tweaks like this
+section so that CI, automation, and review tooling can be validated without
+affecting application behavior.
