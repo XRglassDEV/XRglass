@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import ResultCard from "@/components/ResultCard";
 import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
+import StatusBadge from "@/components/StatusBadge";
+import WatchlistSection from "@/components/watchlist/WatchlistSection";
 import type { ApiResult } from "@/types/results";
 import type { Verdict } from "@/types/api";
 
@@ -150,7 +152,11 @@ export default function Home() {
   }
 
   return (
-    <main>
+    <main className="space-y-6">
+      <div className="flex justify-end">
+        <StatusBadge />
+      </div>
+
       <section className="rounded-3xl border border-slate-800/60 bg-slate-900/60 backdrop-blur-sm p-6 md:p-8 shadow-lg">
         {/* Hero */}
         <h1 className="text-center text-3xl md:text-4xl font-extrabold tracking-tight">
@@ -307,6 +313,12 @@ export default function Home() {
           Beta heuristics only — always double-check before sending funds.
         </p>
       </section>
+
+      <WatchlistSection />
+
+      <footer className="mt-10 text-xs text-slate-500">
+        Build: {process.env.NEXT_PUBLIC_GIT_BRANCH ?? "unknown"} @ {process.env.NEXT_PUBLIC_GIT_COMMIT ?? "unknown"}
+      </footer>
     </main>
   );
 }
