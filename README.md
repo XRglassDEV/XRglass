@@ -5,6 +5,8 @@ It gives a simple **Trust Score (Green / Orange / Red)** with transparent eviden
 
 🌐 Live: [xrglass.vercel.app](https://xrglass.vercel.app)
 
+> _Note: This test pull request confirms that the contribution workflow is functioning as expected._
+
 ---
 
 ## ✨ Features
