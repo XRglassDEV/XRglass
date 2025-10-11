@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/conventional-changelog/standard-version/master/.versionrc.json",
+  "header": "# Changelog",
+  "types": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "chore", "section": "Chores", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true }
+  ],
+  "skip": { "commit": false, "tag": false }
+}
