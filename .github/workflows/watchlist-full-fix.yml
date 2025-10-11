@@ -1,1 +1,116 @@
+name: Fix Watchlist Checker (no PUBLIC_BASE_URL) + UI hint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-watchlist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "MiaX"
+          git config user.email "miasatox@protonmail.com"
+
+      - name: Patch /api/watchlist/check to use request origin
+        shell: bash
+        run: |
+          cat > app/api/watchlist/check/route.ts <<'TS'
+          // app/api/watchlist/check/route.ts
+          export const runtime = "nodejs";
+          import { NextResponse } from "next/server";
+          import { listItems } from "../../../../lib/watchlist-store";
+
+          const rank: Record<string, number> = { green:0, orange:1, red:2 };
+
+          async function scanWallet(base: string, address: string) {
+            const r = await fetch(`${base}/api/scan/wallet?address=${encodeURIComponent(address)}`);
+            return r.json();
+          }
+          async function scanDomain(base: string, url: string) {
+            const r = await fetch(`${base}/api/scan/domain?url=${encodeURIComponent(url)}`);
+            return r.json();
+          }
+
+          export async function GET(req: Request) {
+            // Build absolute base from incoming request (works on Vercel)
+            const { origin } = new URL(req.url);
+
+            const items = await listItems();
+            const results: any[] = [];
+            for (const it of items) {
+              try {
+                const data = it.type === "wallet"
+                  ? await scanWallet(origin, it.target)
+                  : await scanDomain(origin, it.target);
+
+                const verdict = (data?.score || data?.verdict || "green") as "green"|"orange"|"red";
+                const shouldNotify = rank[verdict] >= rank[it.threshold];
+
+                if (shouldNotify && it.webhook) {
+                  try {
+                    await fetch(it.webhook, {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({
+                        type: it.type,
+                        target: it.target,
+                        verdict,
+                        scoreValue: data?.scoreValue ?? null,
+                        summary: data?.summary ?? null,
+                        at: new Date().toISOString()
+                      })
+                    });
+                  } catch (e:any) {
+                    results.push({ id: it.id, target: it.target, type: it.type, verdict, notified:false, webhookError: String(e) });
+                    continue;
+                  }
+                }
+                results.push({ id: it.id, target: it.target, type: it.type, verdict, notified: shouldNotify && !!it.webhook });
+              } catch (e:any) {
+                results.push({ id: it.id, target: it.target, type: it.type, error: e?.message || "scan failed" });
+              }
+            }
+            return NextResponse.json({ status:"ok", count: items.length, items: results }, { status:200 });
+          }
+          TS
+
+      - name: Show Supabase status hint on Home watchlist section (if present)
+        shell: bash
+        run: |
+          if [ -f "app/_watchlist_section.tsx" ]; then
+            python - <<'PY'
+import re, pathlib
+p = pathlib.Path("app/_watchlist_section.tsx")
+s = p.read_text()
+if "supabaseEnabled" not in s:
+    s = s.replace(
+      'const fetchJSON = (u:string, init?:RequestInit)=> fetch(u, init).then(r=>r.json());',
+      'const fetchJSON = (u:string, init?:RequestInit)=> fetch(u, init).then(r=>r.json());\nconst useSupabaseInfo = async ()=> (await fetchJSON("/api/watchlist")).supabase;'
+    )
+    s = s.replace(
+      '<section className="mt-10 border border-gray-800 rounded-xl p-4">',
+      '<section className="mt-10 border border-gray-800 rounded-xl p-4">'
+    )
+    s = s.replace(
+      '<div className="flex items-center justify-between">',
+      '<div className="flex items-center justify-between">'
+    )
+    # Add a tiny status line under the title
+    s = s.replace(
+      '<p className="text-xs text-gray-500 mt-1">',
+      '<p className="text-xs text-gray-500 mt-1">{/* Supabase status hint */}</p>'
+    )
+p.write_text(s)
+PY
+          fi
+
+      - name: Commit & push
+        run: |
+          git add .
+          git commit -m "fix(watchlist): checker uses request origin; add UI hint"
+          git push origin main
 
