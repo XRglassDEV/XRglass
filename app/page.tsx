@@ -93,18 +93,24 @@ export default function Home() {
     try {
       const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
+
+      // ✅ bewaar het volledige resultaat (union)
       setResult(data);
 
-      // 🔒 NEW: Log scan to Supabase
+      // ✅ Log alleen velden die bestaan bij status === "ok"
+      const verdictForLog = data.status === "ok" ? data.verdict : "unknown";
+      const scoreForLog = data.status === "ok" ? data.details?.score ?? null : null;
+      const detailsForLog = data.status === "ok" ? data.details ?? {} : {};
+
       await fetch("/api/log-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: q,
           type: kind,
-          verdict: data.verdict || "unknown",
-          score: data.details?.score || null,
-          details: data.details || {},
+          verdict: verdictForLog,
+          score: scoreForLog,
+          details: detailsForLog,
         }),
       });
 
