@@ -1,0 +1,45 @@
+name: Sanitize Codex PR Comment (remove task link only)
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  scrub:
+    # Run only on PR comment threads
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove Codex task link from the comment body
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const commentId = context.payload.comment.id;
+            const body = context.payload.comment.body || "";
+
+            // Patterns to remove: any line that contains a Codex task URL
+            const patterns = [
+              /.*https?:\/\/(?:www\.)?chatgpt\.com\/codex\/tasks\/\S+.*/gi,
+              /.*https?:\/\/(?:www\.)?chat\.openai\.com\/codex\/tasks\/\S+.*/gi
+            ];
+
+            // Split into lines, drop any matching lines, collapse extra blank lines
+            let lines = body.split(/\r?\n/);
+            const keep = lines.filter(line => !patterns.some(rx => rx.test(line)));
+            const sanitized = keep.join("\n")
+              .replace(/\n{3,}/g, "\n\n")   // collapse multiple blank lines
+              .trim();
+
+            if (sanitized !== body) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: commentId, body: sanitized
+              });
+              core.info("Codex task link removed from comment id " + commentId);
+            } else {
+              core.info("No Codex task link found in this comment.");
+            }
