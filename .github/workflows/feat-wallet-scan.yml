@@ -20,9 +20,11 @@ jobs:
           git config user.email "miasatox@protonmail.com"
 
       - name: Create files
+        shell: bash
         run: |
           mkdir -p app/api/scan/wallet
           mkdir -p lib
+
           # --------- route.ts ----------
           cat <<'TS' > app/api/scan/wallet/route.ts
           // app/api/scan/wallet/route.ts
@@ -50,7 +52,6 @@ jobs:
               const client = new xrpl.Client(endpoint);
               await client.connect();
 
-              // Basic account info
               let accountInfo: any = null;
               try {
                 accountInfo = await client.request({
@@ -58,11 +59,8 @@ jobs:
                   account: address,
                   ledger_index: "validated",
                 });
-              } catch (e) {
-                // Not found or not funded is OK; we handle it in scoring
-              }
+              } catch (e) {}
 
-              // Recent transactions snapshot (last 20)
               let txs: any[] = [];
               try {
                 const txResp = await client.request({
@@ -74,9 +72,7 @@ jobs:
                   forward: false,
                 });
                 txs = txResp.result?.transactions || [];
-              } catch (e) {
-                // ignore, we can still produce a result
-              }
+              } catch (e) {}
 
               await client.disconnect();
 
@@ -141,10 +137,7 @@ jobs:
             } else {
               const ad = data.accountInfo.account_data;
 
-              // 1) Very new account (approx by ledger/sequence age not trivial; use tx recency as proxy)
               const txs: any[] = Array.isArray(data.transactions) ? data.transactions : [];
-              const firstValidated = txs[txs.length - 1]?.tx?.date ?? null;
-              // XRPL 'date' is Ripple epoch seconds; ignore complexity and just check presence of few txs
               if (txs.length < 3) {
                 scoreValue += 10;
                 signals.push({
@@ -154,16 +147,15 @@ jobs:
                 });
               }
 
-              // 2) Recent large outgoing XRP payment (heuristic)
               const outgoingPayments = txs
                 .map((t) => t.tx)
                 .filter((tx: any) => tx?.TransactionType === "Payment" && tx?.Account === ad.Account);
 
               const largeOut = outgoingPayments.find((tx: any) => {
                 if (typeof tx.Amount === "string") {
-                  return dropsToXRP(tx.Amount) >= 1000; // ≥ 1000 XRP as heuristic
+                  return dropsToXRP(tx.Amount) >= 1000;
                 }
-                return false; // ignore issued currencies here
+                return false;
               });
 
               if (largeOut) {
@@ -176,7 +168,6 @@ jobs:
                 });
               }
 
-              // 3) Very low balance (possible dust / throwaway wallets used in scams)
               const xrpBalance = dropsToXRP(ad.Balance ?? "0");
               if (xrpBalance < 5) {
                 scoreValue += 10;
@@ -187,8 +178,6 @@ jobs:
                 });
               }
 
-              // 4) Risky flags (e.g., lsfDisableMaster not set + potential compromised ? — placeholder heuristic)
-              // Note: Proper heuristics need more nuanced checks; keep explainable/simple baseline
               if (ad.Flags === 0) {
                 scoreValue += 5;
                 signals.push({
@@ -226,26 +215,26 @@ jobs:
           ENV
           fi
 
-      - name: Patch package.json (add dependencies)
+      # ✅ FIXED: geen heredoc meer in deze stap
+      - name: Patch package.json (add xrpl dependency)
+        shell: bash
         run: |
-          if [ -f package.json ]; then
-            node - <<'NODE'
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
-            pkg.dependencies = pkg.dependencies || {};
-            pkg.dependencies.xrpl = pkg.dependencies.xrpl || "^3.0.0";
-            // keep size light; no extra deps beyond xrpl
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-            NODE
-          else
-            echo "package.json not found. Please run this workflow in your Next.js repo.";
+          if [ ! -f package.json ]; then
+            echo "package.json not found. Please run this workflow in your Next.js repo."
             exit 1
           fi
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.dependencies=p.dependencies||{};p.dependencies.xrpl=p.dependencies.xrpl||'^3.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+          cat package.json
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Install & build (sanity)
+        shell: bash
         run: |
           npm i
-          # Try building to catch type/runtime errors early (won't fail deploys later)
           npm run build || true
 
       - name: Create Pull Request
