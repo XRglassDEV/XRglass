@@ -1,0 +1,146 @@
+name: Add Token Scan (Codex Auto Push)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  add-token-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set git identity
+        run: |
+          git config user.name "MiaX"
+          git config user.email "miasatox@protonmail.com"
+
+      - name: Ensure folders
+        shell: bash
+        run: |
+          mkdir -p app/api/scan/token
+          mkdir -p lib
+
+      - name: Create token route
+        shell: bash
+        run: |
+          cat > app/api/scan/token/route.ts <<'TS'
+          // app/api/scan/token/route.ts
+          export const runtime = "nodejs";
+          import { NextResponse } from "next/server";
+          import xrpl from "xrpl";
+          import { computeTokenScore } from "../../../../lib/scoring-token";
+
+          export async function GET(req: Request) {
+            try {
+              const { searchParams } = new URL(req.url);
+              const issuer = (searchParams.get("issuer") || "").trim();
+              const currency = (searchParams.get("currency") || "").trim();
+              if (!issuer || !currency) {
+                return NextResponse.json({ status:"error", message:"Use ?issuer=r...&currency=USD" }, { status:400 });
+              }
+
+              const endpoint = process.env.XRPL_ENDPOINT || "wss://xrplcluster.com";
+              const client = new xrpl.Client(endpoint);
+              await client.connect();
+
+              let issuerInfo = null;
+              try {
+                issuerInfo = await client.request({ command: "account_info", account: issuer, ledger_index: "validated" });
+              } catch (e) {}
+
+              let txs = [];
+              try {
+                const txResp = await client.request({
+                  command: "account_tx",
+                  account: issuer,
+                  ledger_index_min: -1,
+                  ledger_index_max: -1,
+                  limit: 30,
+                  forward: false
+                });
+                txs = txResp.result?.transactions || [];
+              } catch (e) {}
+
+              await client.disconnect();
+
+              const data = { issuer, currency, issuerInfo: issuerInfo?.result ?? null, issuerTxs: txs, fetchedAt: new Date().toISOString() };
+              const scored = computeTokenScore(data);
+
+              return NextResponse.json({ status: "ok", ...scored, raw: { txCount: txs.length, hasIssuer: !!issuerInfo?.result } }, { status: 200 });
+            } catch (err: any) {
+              return NextResponse.json({ status: "error", message: err?.message || "Unexpected error" }, { status: 500 });
+            }
+          }
+          TS
+
+      - name: Create scoring lib
+        shell: bash
+        run: |
+          cat > lib/scoring-token.ts <<'TS'
+          // lib/scoring-token.ts — baseline heuristics for token safety
+          type Severity = "low" | "medium" | "high";
+          type Verdict = "green" | "orange" | "red";
+          interface Signal { id:string; label:string; severity:Severity; evidence?:string; }
+
+          const toVerdict = (n:number): Verdict => n >= 70 ? "red" : n >= 35 ? "orange" : "green";
+
+          export function computeTokenScore(data:any) {
+            const signals: Signal[] = [];
+            let scoreValue = 0;
+
+            const hasIssuer = !!data?.issuerInfo?.account_data;
+            if (!hasIssuer) {
+              scoreValue += 60;
+              signals.push({ id:"issuer_not_found", label:"Issuer account not found or not funded", severity:"high" });
+            } else {
+              const txs: any[] = Array.isArray(data.issuerTxs) ? data.issuerTxs : [];
+              if (txs.length < 5) {
+                scoreValue += 10;
+                signals.push({ id:"low_activity_issuer", label:"Issuer has limited activity", severity:"low" });
+              }
+
+              // naive heuristic: many Payments from issuer in recent history -> flag
+              const payments = txs.filter((t:any)=>t?.tx?.TransactionType === "Payment").length;
+              if (payments > 20) {
+                scoreValue += 15;
+                signals.push({ id:"many_payments", label:"High number of Payments by issuer", severity:"medium", evidence:`payments=${payments}` });
+              }
+            }
+
+            const summary = "Baseline token risk based on issuer activity. Expand with LP/holder analysis later.";
+            const score = toVerdict(scoreValue);
+            return { issuer: data.issuer, currency: data.currency, score, scoreValue, signals, summary, checkedAt: data.fetchedAt };
+          }
+          TS
+
+      - name: Patch package.json (add xrpl)
+        shell: bash
+        run: |
+          if [ ! -f package.json ]; then
+            echo "package.json not found — cannot add dependency. Ensure this is a Next.js repo." && exit 1
+          fi
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.dependencies=p.dependencies||{};p.dependencies.xrpl=p.dependencies.xrpl||'^3.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+          cat package.json
+
+      - name: Install minimal deps (optional sanity)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: npm ci (silent fail if lock missing)
+        shell: bash
+        run: |
+          npm ci || echo "npm ci failed (no package-lock) — continuing"
+
+      - name: Commit & push to main
+        shell: bash
+        run: |
+          git add .
+          git commit -m "codex: add token-scan endpoint + scoring (autopush)" || echo "no changes to commit"
+          git push origin main || (echo "git push failed" && exit 1)
+
+      - name: Done
+        run: echo "Token-scan files created and pushed to main. Vercel deploy will trigger if connected."
