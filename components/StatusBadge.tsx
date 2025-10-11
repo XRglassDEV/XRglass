@@ -1,46 +1,41 @@
-// components/StatusBadge.tsx  (of inline in app/page.tsx)
-type Tone = "green" | "orange" | "red" | "info" | "error";
+"use client";
+import { useEffect, useState } from "react";
 
-const STYLES: Record<Tone, { bg: string; dot: string; text: string }> = {
-  green: {
-    bg: "bg-emerald-600/15 border border-emerald-500/30",
-    dot: "bg-emerald-400",
-    text: "text-emerald-300",
-  },
-  orange: {
-    bg: "bg-amber-600/15 border border-amber-500/30",
-    dot: "bg-amber-400",
-    text: "text-amber-300",
-  },
-  red: {
-    bg: "bg-rose-600/15 border border-rose-500/30",
-    dot: "bg-rose-400",
-    text: "text-rose-300",
-  },
-  info: {
-    bg: "bg-slate-600/15 border border-slate-500/30",
-    dot: "bg-slate-400",
-    text: "text-slate-300",
-  },
-  error: {
-    bg: "bg-rose-600/15 border border-rose-500/30",
-    dot: "bg-rose-400",
-    text: "text-rose-300",
-  },
-};
-
-export default function StatusBadge({
-  tone = "info",
-  text,
-}: {
-  tone?: Tone;
-  text: string;
-}) {
-  const s = STYLES[tone] ?? STYLES.info; // ✅ altijd een fallback
+export default function StatusBadge() {
+  const [s, setS] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/xrpl-status", { cache: "no-store" });
+      const j = await r.json();
+      setS(j);
+    } catch {
+      setS({ ok: false, error: "fetch_failed" });
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  const ok = !!s?.ok;
+  const badge = ok ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/40 text-red-300";
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${s.bg} ${s.text}`}>
-      <span className={`h-2 w-2 rounded-full ${s.dot}`} />
-      {text}
-    </span>
+    <div className="mt-4 flex items-center gap-2 text-xs">
+      <span className={`px-2 py-1 rounded ${badge}`}>XRPL node</span>
+      <span className="px-2 py-1 rounded bg-slate-800/60">{s?.node ?? "—"}</span>
+      <span className="px-2 py-1 rounded bg-slate-800/60">{typeof s?.latency === "number" ? `${s.latency} ms` : "—"}</span>
+      {typeof s?.ledger === "number" && (
+        <span className="px-2 py-1 rounded bg-slate-800/60">L: {s.ledger}</span>
+      )}
+      <button
+        onClick={load}
+        disabled={loading}
+        className="px-2 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-60"
+      >
+        {loading ? "…" : "Refresh"}
+      </button>
+    </div>
   );
 }
