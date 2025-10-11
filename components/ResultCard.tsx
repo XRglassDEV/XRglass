@@ -1,40 +1,29 @@
-// components/ResultCard.tsx
 "use client";
 import { useState, useMemo } from "react";
 import DebugSwitch from "./DebugSwitch";
 import type { ApiResult } from "@/types/results";
 
-type Verdict = "green" | "orange" | "red";
+type Verdict = "green" | "orange" | "red" | "unknown";
 type ReasonObj = { label: string; impact?: number };
-
-// Type guards (veilig zonder `any`)
 function isReasonObj(x: unknown): x is ReasonObj {
   return !!x && typeof x === "object" && "label" in x;
 }
-
 function badgeStyle(v?: Verdict) {
   switch (v) {
-    case "green":
-      return "bg-emerald-600 text-white";
-    case "orange":
-      return "bg-amber-500 text-white";
-    case "red":
-      return "bg-rose-600 text-white";
-    default:
-      return "bg-slate-600 text-white";
+    case "green": return "bg-emerald-600 text-white";
+    case "orange": return "bg-amber-500 text-white";
+    case "red": return "bg-rose-600 text-white";
+    default: return "bg-slate-600 text-white";
   }
 }
 
 export default function ResultCard({ result }: { result: ApiResult | null }) {
   const [debug, setDebug] = useState(false);
 
-  // badges uit result.normalized.badges (unknown → veilig naar string[])
   const badges = useMemo<string[]>(() => {
     type WithBadges = { normalized?: { badges?: unknown } };
     const raw = (result as unknown as WithBadges)?.normalized?.badges;
-    if (Array.isArray(raw)) {
-      return Array.from(new Set(raw.map(String))).slice(0, 6);
-    }
+    if (Array.isArray(raw)) return Array.from(new Set(raw.map(String))).slice(0, 6);
     return [];
   }, [result]);
 
@@ -45,7 +34,6 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
       ? "border-emerald-400 text-emerald-700 dark:text-emerald-300"
       : "border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300";
 
-  // flagsDecoded → tuplelijst [key, boolean]
   const flagsList = useMemo<[string, boolean][]>(() => {
     type WithFlags = { details?: { flagsDecoded?: Record<string, unknown> } };
     const map = (result as unknown as WithFlags)?.details?.flagsDecoded ?? {};
@@ -65,21 +53,27 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
 
   const { verdict, points, reasons = [], details, disclaimer } = result;
 
-  // verdict glow
+  const addressValue = typeof details?.address === "string" ? details.address : "—";
+  const accountAgeValue =
+    typeof details?.accountAgeDays === "number" ? details.accountAgeDays : "n/a";
+  const ownerCountValue =
+    typeof details?.ownerCount === "number"
+      ? details.ownerCount.toString()
+      : typeof details?.ownerCount === "string"
+      ? details.ownerCount
+      : "0";
+  const domainValue = typeof details?.domain === "string" ? details.domain : "—";
+  const tomlFoundValue = details?.tomlFound === true;
+  const addressListedValue = details?.addressListed === true;
+  const regularKeySetValue = details?.regularKeySet === true;
+
   const ringClass =
-    verdict === "green"
-      ? "ring-1 ring-emerald-400/30"
-      : verdict === "orange"
-      ? "ring-1 ring-amber-400/30"
-      : verdict === "red"
-      ? "ring-1 ring-rose-400/30"
-      : "";
+    verdict === "green" ? "ring-1 ring-emerald-400/30" :
+    verdict === "orange" ? "ring-1 ring-amber-400/30" :
+    verdict === "red" ? "ring-1 ring-rose-400/30" : "";
 
   return (
-    <div
-      className={`rounded-2xl border border-slate-800 bg-slate-900/50 p-3 md:p-4 shadow-sm space-y-3 ${ringClass}`}
-    >
-      {/* Header */}
+    <div className={`rounded-2xl border border-slate-800 bg-slate-900/50 p-3 md:p-4 shadow-sm space-y-3 ${ringClass}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${badgeStyle(verdict)}`}>
           {verdict === "green" && "✅ Safe"}
@@ -93,7 +87,6 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
         </div>
       </div>
 
-      {/* Badges */}
       {badges.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {badges.map((b) => (
@@ -114,7 +107,6 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
         </div>
       )}
 
-      {/* Reasons — compact horizontal scroller */}
       {Array.isArray(reasons) && reasons.length > 0 && (
         <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] no-scrollbar">
           <div className="flex gap-1.5 pr-1">
@@ -135,38 +127,16 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
         </div>
       )}
 
-      {/* Compact debug panel (collapsible) */}
       {debug && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
-            <div>
-              <span className="opacity-60">Address:</span>{" "}
-              <span className="font-mono">{details?.address ?? "—"}</span>
-            </div>
-            <div>
-              <span className="opacity-60">Age(d):</span>{" "}
-              <b>{details?.accountAgeDays ?? "n/a"}</b>
-            </div>
-            <div>
-              <span className="opacity-60">OwnerCnt:</span>{" "}
-              <b>{details?.ownerCount ?? "0"}</b>
-            </div>
-            <div>
-              <span className="opacity-60">Domain:</span>{" "}
-              <b className="break-all">{details?.domain ?? "—"}</b>
-            </div>
-            <div>
-              <span className="opacity-60">xrp.toml:</span>{" "}
-              <b>{details?.tomlFound ? "found ✅" : "not found"}</b>
-            </div>
-            <div>
-              <span className="opacity-60">TOML listed:</span>{" "}
-              <b>{details?.addressListed ? "yes" : "no"}</b>
-            </div>
-            <div>
-              <span className="opacity-60">RegularKey:</span>{" "}
-              <b>{details?.regularKeySet ? "yes" : "no"}</b>
-            </div>
+            <div><span className="opacity-60">Address:</span> <span className="font-mono">{addressValue}</span></div>
+            <div><span className="opacity-60">Age(d):</span> <b>{accountAgeValue}</b></div>
+            <div><span className="opacity-60">OwnerCnt:</span> <b>{ownerCountValue}</b></div>
+            <div><span className="opacity-60">Domain:</span> <b className="break-all">{domainValue}</b></div>
+            <div><span className="opacity-60">xrp.toml:</span> <b>{tomlFoundValue ? "found ✅" : "not found"}</b></div>
+            <div><span className="opacity-60">TOML listed:</span> <b>{addressListedValue ? "yes" : "no"}</b></div>
+            <div><span className="opacity-60">RegularKey:</span> <b>{regularKeySetValue ? "yes" : "no"}</b></div>
           </div>
 
           {flagsList.length > 0 && (
@@ -174,14 +144,9 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
               <div className="text-xs font-medium mb-1">Flags</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-28 overflow-auto pr-1">
                 {flagsList.map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between rounded-lg border px-2 py-1 text-[11px] border-slate-200 dark:border-slate-800"
-                  >
+                  <div key={k} className="flex items-center justify-between rounded-lg border px-2 py-1 text-[11px] border-slate-200 dark:border-slate-800">
                     <span className="truncate mr-2">{k}</span>
-                    <span className={`font-semibold ${v ? "text-emerald-500" : "text-slate-400"}`}>
-                      {v ? "true" : "false"}
-                    </span>
+                    <span className={`font-semibold ${v ? "text-emerald-500" : "text-slate-400"}`}>{v ? "true" : "false"}</span>
                   </div>
                 ))}
               </div>

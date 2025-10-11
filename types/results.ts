@@ -1,16 +1,8 @@
 // types/results.ts
-export type Verdict = "green" | "orange" | "red";
+import type { ApiOk as ApiOkResponse, ApiErr as ApiErrResponse } from "./api";
 
-export type ApiOk = {
-  status: "ok";
-  verdict: Verdict;
-  points: number;
-  reasons?: Array<string | { label: string; impact?: number }>;
-  details?: any;
-  disclaimer?: string;
-  normalized?: unknown; // optional normalized block
-};
+export type ApiOk = ApiOkResponse;
 
-export type ApiErr = { status: "error"; message: string };
+export type ApiErr = ApiErrResponse;
 
 export type ApiResult = ApiOk | ApiErr;

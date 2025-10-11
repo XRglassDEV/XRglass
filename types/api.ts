@@ -1,25 +1,28 @@
-export type Verdict = 'green' | 'orange' | 'red' | 'unknown';
+export type Verdict = "green" | "orange" | "red" | "unknown";
 
-export type ApiDetails = {
+export type ReasonLike = string | { label: string; impact?: number };
+
+export type ApiDetails = Record<string, unknown> & {
   score?: number | null;
   reasons?: string[];
-  [k: string]: unknown;
 };
 
-export type ApiSuccess = {
-  ok: true;
+export type ApiOk = {
+  status: "ok";
   verdict: Verdict;
+  points?: number;
+  reasons?: ReasonLike[];
   details?: ApiDetails;
+  disclaimer?: string;
+  normalized?: unknown;
+  signals?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
 };
 
 export type ApiErr = {
-  ok: false;
+  status: "error";
   message: string;
   code?: string;
 };
 
-export type ApiResponse = ApiSuccess | ApiErr;
-
-export function isApiSuccess(x: ApiResponse): x is ApiSuccess {
-  return (x as ApiSuccess).ok === true && 'verdict' in x;
-}
+export type ApiResponse = ApiOk | ApiErr;

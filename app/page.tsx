@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import ResultCard from "@/components/ResultCard";
 import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
-import type { ApiResult, Verdict } from "@/types/results";
+import type { ApiResult } from "@/types/results";
+import type { Verdict } from "@/types/api";
 
 /* Helpers */
 function isWalletAddress(s: string): boolean {
@@ -94,10 +95,10 @@ export default function Home() {
       const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
 
-      // ✅ bewaar het volledige resultaat (union)
+      // keep full union for the UI below
       setResult(data);
 
-      // ✅ Log alleen velden die bestaan bij status === "ok"
+      // log only if ok
       const verdictForLog = data.status === "ok" ? data.verdict : "unknown";
       const scoreForLog = data.status === "ok" ? data.details?.score ?? null : null;
       const detailsForLog = data.status === "ok" ? data.details ?? {} : {};

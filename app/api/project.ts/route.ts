@@ -3,105 +3,197 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 
-type ProjectResult = {
-  status: "ok" | "error";
-  domain?: string;
-  toml?: string | null;
-  tomlParsed?: Record<string, any> | null;
-  tomlFound?: boolean;
-  github?: { repo?: string; stars?: number | null; lastCommit?: string | null } | null;
-  message?: string;
-  disclaimer?: string;
+import type { ApiResponse, ApiOk, ApiErr, Verdict } from "@/types/api";
+
+const DISCLAIMER =
+  "Results are indicative only. XRglass cannot guarantee 100% safety. Always do your own research.";
+
+const GITHUB_RE = /github\.com\/([^\/]+\/[^\/]+)(?:\/|$)/i;
+
+type GithubInfo = {
+  repo: string;
+  stars: number | null;
+  lastCommit: string | null;
 };
 
-async function fetchWithTimeout(url: string, ms = 3500) {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), ms);
+type ProjectDetails = {
+  domain: string;
+  tomlFound: boolean;
+  tomlUrl: string | null;
+  tomlParsed: Record<string, string> | null;
+  github: GithubInfo | null;
+};
+
+function ok(verdict: Verdict, extra: Omit<ApiOk, "status" | "verdict"> = {}): ApiOk {
+  return { status: "ok", verdict, ...extra };
+}
+
+function err(message: string, code?: string): ApiErr {
+  return { status: "error", message, code };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  ms = 10_000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "XRglass/1.0 (+https://xrpulse.app)" },
-      signal: ctrl.signal,
+    return await fetch(url, {
+      ...init,
+      signal: init.signal ?? controller.signal,
     });
-    return res;
   } finally {
-    clearTimeout(id);
+    clearTimeout(timer);
   }
 }
 
-function parseSimpleToml(tomlText: string) {
-  // quick heuristic parse: find lines like "NAME = \"value\"" and [fields]
-  const out: Record<string, any> = {};
+function parseSimpleToml(tomlText: string): Record<string, string> {
+  const out: Record<string, string> = {};
   const lines = tomlText.split(/\r?\n/);
   for (const line of lines) {
-    const m = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*["'](.+?)["']\s*$/);
-    if (m) out[m[1]] = m[2];
+    const match = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*["'](.+?)["']\s*$/);
+    if (match) {
+      const key = match[1];
+      const value = match[2];
+      out[key] = value;
+    }
   }
   return out;
 }
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const domain = url.searchParams.get("domain");
-  if (!domain) {
-    return NextResponse.json({ status: "error", message: "No domain provided" }, { status: 400 });
-  }
-
-  const base = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const tomlUrls = [
-    `https://${base}/.well-known/xrp.toml`,
-    `https://www.${base}/.well-known/xrp.toml`,
-  ];
-
-  let tomlText: string | null = null;
-  let tomlFound = false;
-  let parsed: Record<string, any> | null = null;
-
-  for (const u of tomlUrls) {
-    try {
-      const r = await fetchWithTimeout(u, 3000);
-      if (!r.ok) continue;
-      tomlText = await r.text();
-      tomlFound = true;
-      parsed = parseSimpleToml(tomlText);
-      break;
-    } catch (e) {
-      // ignore and try next
+function getRepoFromToml(parsed: Record<string, string> | null): string | null {
+  if (!parsed) return null;
+  const candidates = [parsed.Repository, parsed.repo, parsed.repository];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.includes("github.com")) {
+      return candidate;
     }
   }
+  return null;
+}
 
-  // If there is a repo URL in TOML, try to fetch GitHub metadata (very naive)
-  let githubMeta: ProjectResult["github"] = null;
-  const repoUrl = parsed?.Repository || parsed?.repo || parsed?.repository || null;
-  if (repoUrl && repoUrl.includes("github.com")) {
-    try {
-      // normalize URL -> owner/repo
-      const m = repoUrl.match(/github\.com\/([^\/]+\/[^\/]+)(?:\/|$)/i);
-      if (m) {
-        const ownerRepo = m[1].replace(/\.git$/, "");
-        const apiUrl = `https://api.github.com/repos/${ownerRepo}`;
-        const r2 = await fetchWithTimeout(apiUrl, 3500);
-        if (r2?.ok) {
-          const j = await r2.json();
-          githubMeta = {
-            repo: ownerRepo,
-            stars: typeof j.stargazers_count === "number" ? j.stargazers_count : null,
-            lastCommit: j.pushed_at ?? null,
-          };
-        }
-      }
-    } catch {}
-  }
+function extractGithubRepo(url: string): string | null {
+  const match = url.match(GITHUB_RE);
+  if (!match) return null;
+  return match[1].replace(/\.git$/i, "");
+}
 
-  const result: ProjectResult = {
-    status: "ok",
-    domain: base,
-    toml: tomlText,
-    tomlParsed: parsed,
-    tomlFound,
-    github: githubMeta,
-    disclaimer:
-      "Results are indicative only. XRglass cannot guarantee 100% safety. Always do your own research.",
+function parseGithubJson(value: unknown): GithubInfo | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const stars = record.stargazers_count;
+  const pushedAt = record.pushed_at;
+  return {
+    repo: typeof record.full_name === "string" ? record.full_name : "",
+    stars: typeof stars === "number" && Number.isFinite(stars) ? stars : null,
+    lastCommit: typeof pushedAt === "string" ? pushedAt : null,
   };
+}
 
-  return NextResponse.json(result);
+function getDomainParam(url: URL): string | null {
+  const param = url.searchParams.get("domain");
+  if (!param) return null;
+  const trimmed = param.trim();
+  return trimmed ? trimmed : null;
+}
+
+export async function GET(req: Request) {
+  try {
+    const domainParam = getDomainParam(new URL(req.url));
+    if (!domainParam) {
+      return NextResponse.json<ApiResponse>(err("No domain provided"), {
+        status: 400,
+      });
+    }
+
+    const base = domainParam.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    if (!base) {
+      return NextResponse.json<ApiResponse>(err("Domain is invalid"), {
+        status: 400,
+      });
+    }
+    const tomlUrls = [
+      `https://${base}/.well-known/xrp.toml`,
+      `https://www.${base}/.well-known/xrp.toml`,
+    ];
+
+    let tomlText: string | null = null;
+    let tomlUrl: string | null = null;
+    let tomlParsed: Record<string, string> | null = null;
+
+    for (const candidate of tomlUrls) {
+      try {
+        const response = await fetchWithTimeout(candidate, {
+          headers: { "User-Agent": "XRglass/1.0 (+https://xrpulse.app)" },
+        }, 10_000);
+        if (!response.ok) continue;
+        const text = await response.text();
+        tomlText = text;
+        tomlUrl = candidate;
+        tomlParsed = parseSimpleToml(text);
+        break;
+      } catch {
+        // ignore fetch errors and try the next candidate
+      }
+    }
+
+    const tomlFound = Boolean(tomlText);
+
+    let github: GithubInfo | null = null;
+    const repoUrl = getRepoFromToml(tomlParsed);
+    const repo = repoUrl ? extractGithubRepo(repoUrl) : null;
+
+    if (repo) {
+      try {
+        const ghResponse = await fetchWithTimeout(`https://api.github.com/repos/${repo}`, {
+          headers: {
+            "User-Agent": "XRglass/1.0 (+https://xrpulse.app)",
+            Accept: "application/vnd.github+json",
+          },
+        });
+
+        if (ghResponse.ok) {
+          const ghJson = await ghResponse.json();
+          const info = parseGithubJson(ghJson);
+          if (info) {
+            github = {
+              repo: info.repo || repo,
+              stars: info.stars,
+              lastCommit: info.lastCommit,
+            };
+          }
+        }
+      } catch {
+        // ignore GitHub errors silently
+      }
+    }
+
+    const details: ProjectDetails = {
+      domain: base,
+      tomlFound,
+      tomlUrl,
+      tomlParsed,
+      github,
+    };
+
+    return NextResponse.json<ApiResponse>(
+      ok("unknown", {
+        details,
+        domain: base,
+        toml: tomlText,
+        tomlFound,
+        tomlParsed,
+        tomlUrl,
+        github,
+        disclaimer: DISCLAIMER,
+      }),
+      { status: 200 }
+    );
+  } catch {
+    return NextResponse.json<ApiResponse>(err("Internal server error"), {
+      status: 500,
+    });
+  }
 }

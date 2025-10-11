@@ -6,19 +6,10 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import { Client } from "xrpl";
 
-import { ScoreResult, Reason as NormReason, verdictFromScore } from "@/lib/score";
+import { ScoreResult, Reason as NormReason } from "@/lib/score";
+import type { ApiResponse, ApiOk, ApiErr, Verdict as ApiVerdict } from "@/types/api";
 
-// ---- Your existing types ----
-type Verdict = "green" | "orange" | "red";
-
-// ---- Helpers you already have ----
-function colorVerdict(points: number): Verdict {
-  if (points <= 1) return "green";
-  if (points <= 3) return "orange";
-  return "red";
-}
-
-// Known-trusted allowlist
+const XRPL_ENDPOINT = "wss://s1.ripple.com";
 const TRUSTED_WALLETS = new Set<string>([
   "rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh", // Ripple donation
 ]);
@@ -32,16 +23,113 @@ const FLAGS = {
   lsfGlobalFreeze: 0x00400000,
   lsfDefaultRipple: 0x00800000,
   lsfDepositAuth: 0x01000000,
+} as const;
+
+const DISCLAIMER =
+  "Results are indicative only. XRglass cannot guarantee 100% safety.";
+
+type Verdict = Extract<ApiVerdict, "green" | "orange" | "red">;
+
+type FlagsDecoded = {
+  RequireDestTag: boolean;
+  RequireAuth: boolean;
+  DisallowXRP: boolean;
+  DisableMaster: boolean;
+  NoFreeze: boolean;
+  GlobalFreeze: boolean;
+  DefaultRipple: boolean;
+  DepositAuth: boolean;
 };
 
-const hasFlag = (flags: number | undefined, bit: number) =>
-  typeof flags === "number" && (flags & bit) === bit;
+type AccountDetails = {
+  address: string;
+  ownerCount: number;
+  accountAgeDays: number | null;
+  domain: string | null;
+  tomlFound: boolean;
+  addressListed: boolean;
+  flagsDecoded: FlagsDecoded;
+  regularKeySet: boolean;
+};
+
+type NotFoundDetails = {
+  address: string;
+  notFound: true;
+};
+
+type AccountInfoResponse = {
+  result: {
+    account_data: {
+      Flags?: number;
+      OwnerCount?: number | string;
+      RegularKey?: string;
+      Domain?: string | null;
+    };
+  };
+};
+
+type AccountTxItem = {
+  tx?: { ledger_index?: number };
+  ledger_index?: number;
+};
+
+type AccountTxResponse = {
+  result: {
+    transactions: AccountTxItem[];
+  };
+};
+
+type LedgerResponse = {
+  result: {
+    ledger?: {
+      close_time?: number;
+    };
+  };
+};
+
+function ok(
+  verdict: Verdict,
+  extra: Omit<ApiOk, "status" | "verdict"> = {}
+): ApiOk {
+  return { status: "ok", verdict, ...extra };
+}
+
+function err(message: string, code?: string): ApiErr {
+  return { status: "error", message, code };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  ms = 10_000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function colorVerdict(points: number): Verdict {
+  if (points <= 1) return "green";
+  if (points <= 3) return "orange";
+  return "red";
+}
+
+function hasFlag(flags: number | undefined, bit: number): boolean {
+  return typeof flags === "number" && (flags & bit) === bit;
+}
 
 function hexToAscii(hex?: string | null): string | null {
   if (!hex) return null;
   try {
-    const bytes = hex.match(/.{1,2}/g) || [];
-    return decodeURIComponent(bytes.map((b) => "%" + b).join("")).replace(/\0+$/, "");
+    const bytes = hex.match(/.{1,2}/g) ?? [];
+    return decodeURIComponent(bytes.map((b) => `%${b}`).join("")).replace(/\0+$/, "");
   } catch {
     try {
       return Buffer.from(hex, "hex").toString("utf8").replace(/\0+$/, "");
@@ -51,32 +139,60 @@ function hexToAscii(hex?: string | null): string | null {
   }
 }
 
-async function fetchWithTimeout(url: string, ms = 3500): Promise<Response> {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": "XRglass/1.0 (+https://xtrustscore.com)", Accept: "text/plain,*/*" },
-    });
-  } finally {
-    clearTimeout(id);
-  }
+function toNormReason(label: string, impact: number): NormReason {
+  const code =
+    label
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 32) || "REASON";
+  return { code, label, weight: -impact };
 }
 
-async function getAccountInfo(client: Client, address: string) {
-  const r = await client.request({
-    command: "account_info",
-    account: address,
-    ledger_index: "validated",
-    strict: true,
-  });
-  return r as any;
+function isAccountInfoResponse(value: unknown): value is AccountInfoResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "result" in value &&
+    typeof (value as { result?: unknown }).result === "object" &&
+    (value as AccountInfoResponse).result?.account_data !== undefined
+  );
+}
+
+function isAccountTxResponse(value: unknown): value is AccountTxResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as AccountTxResponse).result?.transactions)
+  );
+}
+
+function isLedgerResponse(value: unknown): value is LedgerResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as LedgerResponse).result?.ledger === "object"
+  );
+}
+
+function parseXrplErrorCode(error: unknown): string | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    typeof (error as { data?: { error?: unknown } }).data?.error === "string"
+  ) {
+    return (error as { data: { error: string } }).data.error;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return null;
 }
 
 async function getAccountAgeDays(client: Client, address: string): Promise<number | null> {
   try {
-    const r = await client.request({
+    const txResponse = await client.request({
       command: "account_tx",
       account: address,
       ledger_index_min: -1,
@@ -84,21 +200,41 @@ async function getAccountAgeDays(client: Client, address: string): Promise<numbe
       forward: true,
       limit: 1,
     });
-    const txs = (r as any).result?.transactions || [];
-    if (!txs.length) return null;
-    const first = txs[0];
-    const ledgerIndex = first.tx?.ledger_index ?? first.ledger_index;
-    if (!ledgerIndex) return null;
 
-    const ledger = await client.request({
+    if (!isAccountTxResponse(txResponse)) {
+      return null;
+    }
+
+    const first = txResponse.result.transactions[0];
+    if (!first) return null;
+
+    const txLedgerIndex =
+      typeof first.tx === "object" &&
+      first.tx !== null &&
+      typeof (first.tx as { ledger_index?: unknown }).ledger_index === "number"
+        ? (first.tx as { ledger_index: number }).ledger_index
+        : null;
+
+    const ledgerIndex =
+      typeof first.ledger_index === "number" ? first.ledger_index : txLedgerIndex;
+
+    if (ledgerIndex === null) return null;
+
+    const ledgerResponse = await client.request({
       command: "ledger",
       ledger_index: ledgerIndex,
       transactions: false,
       expand: false,
     });
-    const closeTime = (ledger as any).result?.ledger?.close_time;
+
+    if (!isLedgerResponse(ledgerResponse)) {
+      return null;
+    }
+
+    const closeTime = ledgerResponse.result.ledger?.close_time;
     if (typeof closeTime !== "number") return null;
-    const rippleEpochMs = (closeTime + 946684800) * 1000;
+
+    const rippleEpochMs = (closeTime + 946_684_800) * 1000;
     const ageMs = Date.now() - rippleEpochMs;
     return Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
   } catch {
@@ -108,7 +244,9 @@ async function getAccountAgeDays(client: Client, address: string): Promise<numbe
 
 async function checkXrpToml(address: string, domainHex?: string | null) {
   const domain = hexToAscii(domainHex)?.trim().replace(/\/+$/, "") || null;
-  if (!domain) return { domain: null, tomlFound: false, addressListed: false };
+  if (!domain) {
+    return { domain: null, tomlFound: false, addressListed: false };
+  }
 
   const urls = [
     `https://${domain}/.well-known/xrp.toml`,
@@ -117,164 +255,180 @@ async function checkXrpToml(address: string, domainHex?: string | null) {
 
   for (const url of urls) {
     try {
-      const res = await fetchWithTimeout(url, 3500);
+      const res = await fetchWithTimeout(url, {
+        headers: {
+          "User-Agent": "XRglass/1.0 (+https://xtrustscore.com)",
+          Accept: "text/plain,*/*",
+        },
+      });
       if (!res.ok) continue;
       const text = await res.text();
       const addressListed = text.includes(address);
       return { domain, tomlFound: true, addressListed };
-    } catch {}
+    } catch {
+      // ignore and try next URL
+    }
   }
+
   return { domain, tomlFound: false, addressListed: false };
-}
-
-// ---- Normalization helpers ----
-
-// Convert your reason label + impact into the normalized Reason.
-// In normalized schema: positive weight = safer, negative = riskier.
-// Your "impact" is + when risky. So weight = -impact to align.
-function toNormReason(label: string, impact: number): NormReason {
-  const code = label
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_|_$/g, "")
-    .slice(0, 32) || "REASON";
-  return { code, label, weight: -impact };
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const address = (searchParams.get("address") || "").trim();
+  const addressRaw = searchParams.get("address");
+  const address = addressRaw?.trim();
 
   if (!address) {
-    return NextResponse.json({ status: "error", message: "No address provided" }, { status: 400 });
+    return NextResponse.json<ApiResponse>(err("No address provided"), {
+      status: 400,
+    });
   }
 
   let client: Client | null = null;
 
   try {
-    client = new Client("wss://s1.ripple.com");
+    client = new Client(XRPL_ENDPOINT);
     await client.connect();
 
-    // account_info with friendlier errors
-    let info: any;
+    let accountData: AccountInfoResponse["result"]["account_data"];
     try {
-      info = await getAccountInfo(client, address);
-    } catch (e: any) {
-      const msg = e?.data?.error || e?.message || "";
-      if (/accountMalformed|actMalformed/i.test(msg)) {
-        return NextResponse.json({ status: "error", message: "Invalid XRP address" }, { status: 400 });
-      }
-      if (/actNotFound|account not found/i.test(msg)) {
-        const legacy = {
-          status: "ok" as const,
-          verdict: "red" as Verdict,
-          points: 4,
-          reasons: [{ label: "Account not found (not activated/funded)", impact: +4 }],
-          details: { address, notFound: true },
-          disclaimer: "Results are indicative only. XRglass cannot guarantee 100% safety.",
-        };
+      const info = await client.request({
+        command: "account_info",
+        account: address,
+        ledger_index: "validated",
+        strict: true,
+      });
 
-        // Normalized block
+      if (!isAccountInfoResponse(info)) {
+        return NextResponse.json<ApiResponse>(err("Account lookup failed"), {
+          status: 502,
+        });
+      }
+
+      accountData = info.result.account_data;
+    } catch (error) {
+      const code = parseXrplErrorCode(error) ?? undefined;
+      if (code && /accountMalformed|actMalformed/i.test(code)) {
+        return NextResponse.json<ApiResponse>(err("Invalid XRP address", code), {
+          status: 400,
+        });
+      }
+      if (code && /actNotFound|account not found/i.test(code)) {
+        const reasons = [
+          { label: "Account not found (not activated/funded)", impact: 4 },
+        ];
+        const notFoundDetails: NotFoundDetails = { address, notFound: true };
         const normalized: ScoreResult<{ address: string }> = {
           verdict: "red",
-          score: 4, // you’re using "points" = risk
-          reasons: legacy.reasons.map(r => toNormReason(r.label, r.impact)),
+          score: 4,
+          reasons: reasons.map((r) => toNormReason(r.label, r.impact)),
           subject: { address },
           badges: ["Account not found"],
           ts: new Date().toISOString(),
         };
 
-        return NextResponse.json({ ...legacy, normalized }, { status: 200 });
+        return NextResponse.json<ApiResponse>(
+          ok("red", {
+            points: 4,
+            reasons,
+            details: notFoundDetails,
+            disclaimer: DISCLAIMER,
+            normalized,
+          }),
+          { status: 200 }
+        );
       }
-      throw e;
+
+      return NextResponse.json<ApiResponse>(
+        err("Failed to retrieve account information", code),
+        { status: 502 }
+      );
     }
 
-    const data = info.result.account_data;
-    const flags = data.Flags as number | undefined;
-    const ownerCount = Number(data.OwnerCount ?? 0);
-    const regKey = data.RegularKey as string | undefined;
-    const domainHex = data.Domain as string | undefined;
+    const flags = typeof accountData.Flags === "number" ? accountData.Flags : undefined;
+    const ownerCount = Number(accountData.OwnerCount ?? 0);
+    const regKey = typeof accountData.RegularKey === "string" ? accountData.RegularKey : undefined;
+    const domainHex = typeof accountData.Domain === "string" ? accountData.Domain : null;
 
     const { domain, tomlFound, addressListed } = await checkXrpToml(address, domainHex);
     const accountAgeDays = await getAccountAgeDays(client, address);
 
-    // --- Scoring (your current approach) ---
-    let points = 0;
-    const reasons: { label: string; impact: number }[] = [];
-    const badges: string[] = [];
+    const flagsDecoded: FlagsDecoded = {
+      RequireDestTag: hasFlag(flags, FLAGS.lsfRequireDestTag),
+      RequireAuth: hasFlag(flags, FLAGS.lsfRequireAuth),
+      DisallowXRP: hasFlag(flags, FLAGS.lsfDisallowXRP),
+      DisableMaster: hasFlag(flags, FLAGS.lsfDisableMaster),
+      NoFreeze: hasFlag(flags, FLAGS.lsfNoFreeze),
+      GlobalFreeze: hasFlag(flags, FLAGS.lsfGlobalFreeze),
+      DefaultRipple: hasFlag(flags, FLAGS.lsfDefaultRipple),
+      DepositAuth: hasFlag(flags, FLAGS.lsfDepositAuth),
+    };
+
+    const baseDetails: AccountDetails = {
+      address,
+      ownerCount,
+      accountAgeDays,
+      domain,
+      tomlFound,
+      addressListed,
+      flagsDecoded,
+      regularKeySet: Boolean(regKey),
+    };
 
     if (TRUSTED_WALLETS.has(address)) {
-      // Legacy payload
-      const legacy = {
-        status: "ok" as const,
-        verdict: "green" as Verdict,
-        points: 0,
-        reasons: [{ label: "Trusted allowlist wallet", impact: -999 }],
-        details: {
-          address,
-          ownerCount,
-          accountAgeDays,
-          domain,
-          tomlFound,
-          addressListed,
-          flagsDecoded: {
-            RequireDestTag: hasFlag(flags, FLAGS.lsfRequireDestTag),
-            RequireAuth: hasFlag(flags, FLAGS.lsfRequireAuth),
-            DisallowXRP: hasFlag(flags, FLAGS.lsfDisallowXRP),
-            DisableMaster: hasFlag(flags, FLAGS.lsfDisableMaster),
-            NoFreeze: hasFlag(flags, FLAGS.lsfNoFreeze),
-            GlobalFreeze: hasFlag(flags, FLAGS.lsfGlobalFreeze),
-            DefaultRipple: hasFlag(flags, FLAGS.lsfDefaultRipple),
-            DepositAuth: hasFlag(flags, FLAGS.lsfDepositAuth),
-          },
-          regularKeySet: Boolean(regKey),
-        },
-        disclaimer: "Results are indicative only. XRglass cannot guarantee 100% safety.",
-      };
-
-      // Normalized
+      const reasons = [{ label: "Trusted allowlist wallet", impact: -999 }];
       const normalized: ScoreResult<{ address: string }> = {
         verdict: "green",
         score: 0,
-        reasons: legacy.reasons.map(r => toNormReason(r.label, r.impact)),
+        reasons: reasons.map((r) => toNormReason(r.label, r.impact)),
         subject: { address },
         badges: ["Trusted wallet", "Allowlist match"],
         ts: new Date().toISOString(),
       };
 
-      return NextResponse.json({ ...legacy, normalized }, { status: 200 });
+      return NextResponse.json<ApiResponse>(
+        ok("green", {
+          points: 0,
+          reasons,
+          details: baseDetails,
+          disclaimer: DISCLAIMER,
+          normalized,
+        }),
+        { status: 200 }
+      );
     }
 
-    // Risky flags
-    if (hasFlag(flags, FLAGS.lsfGlobalFreeze)) {
+    let points = 0;
+    const reasons: Array<{ label: string; impact: number }> = [];
+    const badges: string[] = [];
+
+    if (flagsDecoded.GlobalFreeze) {
       points += 3;
-      reasons.push({ label: "Account has GlobalFreeze set", impact: +3 });
+      reasons.push({ label: "Account has GlobalFreeze set", impact: 3 });
       badges.push("GlobalFreeze");
     }
-    if (hasFlag(flags, FLAGS.lsfDisableMaster) && !regKey) {
+
+    if (flagsDecoded.DisableMaster && !regKey) {
       points += 2;
-      reasons.push({ label: "Master key disabled without RegularKey", impact: +2 });
+      reasons.push({ label: "Master key disabled without RegularKey", impact: 2 });
       badges.push("Master disabled (no RegularKey)");
     }
 
-    // Age
     if (accountAgeDays !== null) {
       if (accountAgeDays < 7) {
         points += 2;
-        reasons.push({ label: "Account age < 7 days", impact: +2 });
+        reasons.push({ label: "Account age < 7 days", impact: 2 });
       } else if (accountAgeDays < 30) {
         points += 1;
-        reasons.push({ label: "Account age < 30 days", impact: +1 });
+        reasons.push({ label: "Account age < 30 days", impact: 1 });
       }
     }
 
-    // OwnerCount
     if (ownerCount > 20) {
       points += 1;
-      reasons.push({ label: "High OwnerCount (>20)", impact: +1 });
+      reasons.push({ label: "High OwnerCount (>20)", impact: 1 });
     }
 
-    // Domain & TOML
     if (domain) {
       if (tomlFound) {
         points -= 1;
@@ -292,8 +446,7 @@ export async function GET(req: Request) {
       reasons.push({ label: "No domain configured", impact: 0 });
     }
 
-    // Safer flags
-    if (hasFlag(flags, FLAGS.lsfRequireDestTag)) {
+    if (flagsDecoded.RequireDestTag) {
       points -= 1;
       reasons.push({ label: "RequireDestTag enabled", impact: -1 });
       badges.push("RequireDestTag");
@@ -301,53 +454,35 @@ export async function GET(req: Request) {
 
     const verdict = colorVerdict(points);
 
-    // Legacy payload (unchanged fields so your current UI still works)
-    const legacy = {
-      status: "ok" as const,
-      verdict,
-      points,
-      reasons,
-      details: {
-        address,
-        ownerCount,
-        accountAgeDays,
-        domain,
-        tomlFound,
-        addressListed,
-        flagsDecoded: {
-          RequireDestTag: hasFlag(flags, FLAGS.lsfRequireDestTag),
-          RequireAuth: hasFlag(flags, FLAGS.lsfRequireAuth),
-          DisallowXRP: hasFlag(flags, FLAGS.lsfDisallowXRP),
-          DisableMaster: hasFlag(flags, FLAGS.lsfDisableMaster),
-          NoFreeze: hasFlag(flags, FLAGS.lsfNoFreeze),
-          GlobalFreeze: hasFlag(flags, FLAGS.lsfGlobalFreeze),
-          DefaultRipple: hasFlag(flags, FLAGS.lsfDefaultRipple),
-          DepositAuth: hasFlag(flags, FLAGS.lsfDepositAuth),
-        },
-        regularKeySet: Boolean(regKey),
-      },
-      disclaimer: "Results are indicative only. XRglass cannot guarantee 100% safety.",
-    };
-
-    // Normalized block (new schema)
     const normalized: ScoreResult<{ address: string }> = {
       verdict,
-      score: points, // your "points" is the risk score
-      reasons: reasons.map(r => toNormReason(r.label, r.impact)),
+      score: points,
+      reasons: reasons.map((r) => toNormReason(r.label, r.impact)),
       subject: { address },
       badges,
       ts: new Date().toISOString(),
     };
 
-    return NextResponse.json({ ...legacy, normalized }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json(
-      { status: "error", message: err?.message ?? "Unknown error" },
-      { status: 500 }
+    return NextResponse.json<ApiResponse>(
+      ok(verdict, {
+        points,
+        reasons,
+        details: baseDetails,
+        disclaimer: DISCLAIMER,
+        normalized,
+      }),
+      { status: 200 }
     );
+  } catch (error) {
+    const code = parseXrplErrorCode(error) ?? undefined;
+    return NextResponse.json<ApiResponse>(err("Internal server error", code), {
+      status: 500,
+    });
   } finally {
     try {
       await client?.disconnect();
-    } catch {}
+    } catch {
+      // ignore disconnect errors
+    }
   }
 }
