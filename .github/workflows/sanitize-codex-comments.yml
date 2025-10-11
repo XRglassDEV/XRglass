@@ -1,0 +1,100 @@
+name: Sanitize Codex PR comments
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request:
+    types: [opened, synchronize, edited]
+  schedule:
+    - cron: "*/5 * * * *"   # sweep every 5 minutes
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to sanitize (leave blank to clean all open PRs)"
+        required: false
+        default: ""
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  sweep:
+    # Run for PR contexts, manual dispatch, or scheduled sweeps
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.issue.pull_request != null ||
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove Codex task links from PR comments (keep the rest)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Decide which PRs to scan
+            const input = (core.getInput('pr_number') || '').trim();
+            let prNumbers = [];
+            if (input) {
+              prNumbers = [Number(input)];
+            } else if (context.payload?.pull_request) {
+              prNumbers = [context.payload.pull_request.number];
+            } else if (context.payload?.issue?.pull_request) {
+              prNumbers = [context.payload.issue.number];
+            } else {
+              const prs = await github.paginate(
+                github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 }
+              );
+              prNumbers = prs.map(p => p.number);
+            }
+
+            // Match ANY line containing a Codex task URL in common forms:
+            // - plain: https://chatgpt.com/codex/tasks/...
+            // - old:   https://chat.openai.com/codex/tasks/...
+            // - wrapped in <...>
+            // - markdown [text](url)
+            const urlPart = "(?:chatgpt\\.com|chat\\.openai\\.com)\\/codex\\/tasks\\/\\S+";
+            const lineMatchers = [
+              new RegExp(`^.*https?:\/\/${urlPart}.*$`, "i"),
+              new RegExp(`^.*<https?:\/\/${urlPart}>.*$`, "i"),
+              new RegExp(`^.*\]\(https?:\/\/${urlPart}\).*$`, "i")
+            ];
+
+            let changedAny = false;
+
+            for (const number of prNumbers) {
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: number, per_page: 100 }
+              );
+
+              for (const c of comments) {
+                const original = c.body || "";
+                const lines = original.split(/\r?\n/);
+
+                // drop only the lines that contain the task link
+                const kept = lines.filter(line =>
+                  !lineMatchers.some(rx => rx.test(line))
+                );
+
+                // collapse extra blank lines
+                const sanitized = kept
+                  .join("\n")
+                  .replace(/\n{3,}/g, "\n\n")
+                  .trim();
+
+                if (sanitized !== original) {
+                  await github.rest.issues.updateComment({
+                    owner, repo, comment_id: c.id, body: sanitized
+                  });
+                  core.info(`Sanitized comment ${c.id} on PR #${number}`);
+                  changedAny = true;
+                }
+              }
+            }
+
+            core.info(`Processed PRs: ${prNumbers.join(", ") || "(none)"}`);
+            if (!changedAny) core.info("No Codex task links found.");
