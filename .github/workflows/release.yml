@@ -7,6 +7,10 @@ on:
         required: false
         default: "auto"
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
     permissions:
@@ -16,6 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # needed so standard-version can see full history
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
@@ -29,6 +34,12 @@ jobs:
       - run: npm run build
 
       # Determine bump strategy
+      - name: Configure git identity (repo-local)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --list --show-origin | grep -E 'user.name|user.email' || true
+
       - name: Run standard-version
         run: |
           if [ "${{ github.event.inputs.bump }}" = "auto" ] || [ -z "${{ github.event.inputs.bump }}" ]; then
