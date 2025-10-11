@@ -1,0 +1,268 @@
+name: Bootstrap Wallet Scan (XRglass)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set git identity (privacy)
+        run: |
+          git config user.name "MiaX"
+          git config user.email "miasatox@protonmail.com"
+
+      - name: Create files
+        run: |
+          mkdir -p app/api/scan/wallet
+          mkdir -p lib
+          # --------- route.ts ----------
+          cat <<'TS' > app/api/scan/wallet/route.ts
+          // app/api/scan/wallet/route.ts
+          export const runtime = "nodejs";
+          import { NextResponse } from "next/server";
+          import xrpl from "xrpl";
+          import { computeScore } from "../../../../lib/scoring";
+
+          function isLikelyXRPAddress(addr: string) {
+            return typeof addr === "string" && /^r[1-9A-HJ-NP-Za-km-z]{24,35}$/.test(addr);
+          }
+
+          export async function GET(req: Request) {
+            try {
+              const { searchParams } = new URL(req.url);
+              const address = searchParams.get("address")?.trim() || "";
+              if (!isLikelyXRPAddress(address)) {
+                return NextResponse.json(
+                  { status: "error", message: "Invalid or missing XRP address." },
+                  { status: 400 }
+                );
+              }
+
+              const endpoint = process.env.XRPL_ENDPOINT || "wss://xrplcluster.com";
+              const client = new xrpl.Client(endpoint);
+              await client.connect();
+
+              // Basic account info
+              let accountInfo: any = null;
+              try {
+                accountInfo = await client.request({
+                  command: "account_info",
+                  account: address,
+                  ledger_index: "validated",
+                });
+              } catch (e) {
+                // Not found or not funded is OK; we handle it in scoring
+              }
+
+              // Recent transactions snapshot (last 20)
+              let txs: any[] = [];
+              try {
+                const txResp = await client.request({
+                  command: "account_tx",
+                  account: address,
+                  ledger_index_min: -1,
+                  ledger_index_max: -1,
+                  limit: 20,
+                  forward: false,
+                });
+                txs = txResp.result?.transactions || [];
+              } catch (e) {
+                // ignore, we can still produce a result
+              }
+
+              await client.disconnect();
+
+              const data = {
+                address,
+                accountInfo: accountInfo?.result ?? null,
+                transactions: txs,
+                fetchedAt: new Date().toISOString(),
+              };
+
+              const scored = computeScore(data);
+              return NextResponse.json(
+                { status: "ok", ...scored, raw: { hasAccount: !!accountInfo?.result, txCount: txs.length } },
+                { status: 200 }
+              );
+            } catch (err: any) {
+              return NextResponse.json(
+                { status: "error", message: err?.message || "Unexpected error" },
+                { status: 500 }
+              );
+            }
+          }
+          TS
+
+          # --------- lib/scoring.ts ----------
+          cat <<'TS' > lib/scoring.ts
+          // lib/scoring.ts
+          type Severity = "low" | "medium" | "high";
+          type Verdict = "green" | "orange" | "red";
+
+          interface Signal {
+            id: string;
+            label: string;
+            severity: Severity;
+            evidence?: string;
+          }
+
+          function toVerdict(scoreValue: number): Verdict {
+            if (scoreValue >= 70) return "red";
+            if (scoreValue >= 35) return "orange";
+            return "green";
+          }
+
+          function dropsToXRP(drops: string | number): number {
+            const n = typeof drops === "string" ? Number(drops) : drops;
+            if (!isFinite(n)) return 0;
+            return n / 1_000_000;
+          }
+
+          export function computeScore(data: any) {
+            const signals: Signal[] = [];
+            let scoreValue = 0;
+
+            const hasAccount = !!data?.accountInfo?.account_data;
+            if (!hasAccount) {
+              scoreValue += 60;
+              signals.push({
+                id: "account_not_found",
+                label: "Account not found / not funded",
+                severity: "high",
+              });
+            } else {
+              const ad = data.accountInfo.account_data;
+
+              // 1) Very new account (approx by ledger/sequence age not trivial; use tx recency as proxy)
+              const txs: any[] = Array.isArray(data.transactions) ? data.transactions : [];
+              const firstValidated = txs[txs.length - 1]?.tx?.date ?? null;
+              // XRPL 'date' is Ripple epoch seconds; ignore complexity and just check presence of few txs
+              if (txs.length < 3) {
+                scoreValue += 10;
+                signals.push({
+                  id: "low_activity_history",
+                  label: "Very limited activity history",
+                  severity: "low",
+                });
+              }
+
+              // 2) Recent large outgoing XRP payment (heuristic)
+              const outgoingPayments = txs
+                .map((t) => t.tx)
+                .filter((tx: any) => tx?.TransactionType === "Payment" && tx?.Account === ad.Account);
+
+              const largeOut = outgoingPayments.find((tx: any) => {
+                if (typeof tx.Amount === "string") {
+                  return dropsToXRP(tx.Amount) >= 1000; // ≥ 1000 XRP as heuristic
+                }
+                return false; // ignore issued currencies here
+              });
+
+              if (largeOut) {
+                scoreValue += 20;
+                signals.push({
+                  id: "recent_large_outflow",
+                  label: "Recent large outgoing XRP payment",
+                  severity: "medium",
+                  evidence: `tx hash ${largeOut?.hash ?? "(unknown)"} ≥ 1000 XRP`,
+                });
+              }
+
+              // 3) Very low balance (possible dust / throwaway wallets used in scams)
+              const xrpBalance = dropsToXRP(ad.Balance ?? "0");
+              if (xrpBalance < 5) {
+                scoreValue += 10;
+                signals.push({
+                  id: "very_low_balance",
+                  label: "Very low XRP balance (< 5 XRP)",
+                  severity: "low",
+                });
+              }
+
+              // 4) Risky flags (e.g., lsfDisableMaster not set + potential compromised ? — placeholder heuristic)
+              // Note: Proper heuristics need more nuanced checks; keep explainable/simple baseline
+              if (ad.Flags === 0) {
+                scoreValue += 5;
+                signals.push({
+                  id: "no_protective_account_flags",
+                  label: "No protective account flags set",
+                  severity: "low",
+                });
+              }
+            }
+
+            const verdict = toVerdict(scoreValue);
+            const summary =
+              verdict === "red"
+                ? "High risk — missing account data or strong risky signals."
+                : verdict === "orange"
+                ? "Moderate risk — some warning signals detected."
+                : "Low risk — no major red flags in basic checks.";
+
+            return {
+              address: data.address,
+              score: verdict,
+              scoreValue,
+              signals,
+              summary,
+              cachedAt: data.fetchedAt,
+            };
+          }
+          TS
+
+          # --------- .env.example ----------
+          if [ ! -f ".env.example" ]; then
+            cat <<'ENV' > .env.example
+          # XRPL WebSocket endpoint (optional override)
+          XRPL_ENDPOINT=wss://xrplcluster.com
+          ENV
+          fi
+
+      - name: Patch package.json (add dependencies)
+        run: |
+          if [ -f package.json ]; then
+            node - <<'NODE'
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+            pkg.dependencies = pkg.dependencies || {};
+            pkg.dependencies.xrpl = pkg.dependencies.xrpl || "^3.0.0";
+            // keep size light; no extra deps beyond xrpl
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+            NODE
+          else
+            echo "package.json not found. Please run this workflow in your Next.js repo.";
+            exit 1
+          fi
+
+      - name: Install & build (sanity)
+        run: |
+          npm i
+          # Try building to catch type/runtime errors early (won't fail deploys later)
+          npm run build || true
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: feat/wallet-scan-mvp
+          title: "feat: wallet scan API (XRglass MVP)"
+          commit-message: "feat(api): add /api/scan/wallet with basic scoring"
+          body: |
+            This PR adds the first XRglass scanner endpoint:
+
+            - `GET /api/scan/wallet?address=...` (Node runtime)
+            - XRPL connect via `xrpl` (cluster endpoint by default)
+            - Basic explainable scoring & signals
+            - `.env.example` with `XRPL_ENDPOINT`
+
+            No manual coding needed. Merge to enable the MVP.
+          labels: |
+            feature
+            xrglass
