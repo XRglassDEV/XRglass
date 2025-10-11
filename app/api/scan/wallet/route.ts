@@ -2,6 +2,7 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { computeWalletScore } from "../../../../lib/scoring-wallet";
+import { fetchAccountInfo } from "../../../../lib/xrpl-client";
 
 // Allow override via env: comma-separated list
 const DEFAULT_ENDPOINTS = [
@@ -65,16 +66,14 @@ export async function GET(req: Request) {
     }
 
     // 1) account_info
-    let accountInfo: any = null;
-    try {
-      accountInfo = await rpcWithFallback({
-        method: "account_info",
-        params: [{ account: address, ledger_index: "validated" }]
-      });
-    } catch (e: any) {
-      // If account not found, rippled returns an error; we handle that downstream as a signal
-      accountInfo = null;
+    const info = await fetchAccountInfo(address, getRpcEndpoints());
+    if (!info.ok) {
+      return NextResponse.json(
+        { status: "error", message: info.message },
+        { status: 504 }
+      );
     }
+    const accountInfo = info.data.account_data;
 
     // 2) account_tx (last 20)
     let txs: any[] = [];
