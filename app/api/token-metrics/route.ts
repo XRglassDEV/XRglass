@@ -1,97 +1,133 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest } from "next/server";
-import xrpl from "xrpl";
+
+import { rpcWithFallback, rpcCall } from "@/lib/xrpl/rpc";
 
 export const runtime = "edge";
 
-/**
- * Body: { issuer: string, currency: string, topN?: number }
- * - issuer: XRPL account (r...)
- * - currency: 3-letter (e.g. "USD") or 40-hex uppercase code
- * Returns:
- *  - totalSupply: number
- *  - holdersCount: number
- *  - topHolders: Array<{ account: string, amount: number, percent: number }>
- *  - topNPercent: number
- *  - largestPercent: number
- */
+type AccountLinesParams = {
+  account: string;
+  ledger_index: string;
+  limit: number;
+  marker?: unknown;
+};
+
+type AccountLinesResult = {
+  lines?: Array<{
+    currency?: string;
+    balance?: string;
+    account?: string;
+  }>;
+  marker?: unknown;
+  error?: string;
+  error_code?: number;
+};
+
+function makeAccountLinesBody(issuer: string, marker?: unknown) {
+  const params: AccountLinesParams = {
+    account: issuer,
+    ledger_index: "validated",
+    limit: 400,
+  };
+  if (marker !== undefined) {
+    params.marker = marker;
+  }
+  return {
+    method: "account_lines",
+    params: [params],
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { issuer, currency, topN = 10 } = await req.json();
     const iss = String(issuer || "").trim();
     const curRaw = String(currency || "").trim();
     if (!iss || !curRaw) {
-      return new Response(JSON.stringify({ error: "issuer and currency are required" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "issuer and currency are required" }), {
+        status: 400,
+      });
     }
 
-    // Normalize currency comparison
-    const isHexCurrency = /^[A-F0-9]{40}$/i.test(curRaw);
-    const cur = isHexCurrency ? curRaw.toUpperCase() : curRaw.toUpperCase(); // XRPL uses uppercase codes
+    const cur = curRaw.toUpperCase();
 
-    // Connect (use same WSS as the rest of the app)
-    const WSS = process.env.XRPL_WSS || "wss://xrplcluster.com";
-    const client = new xrpl.Client(WSS);
-    await client.connect();
+    const firstResp = await rpcWithFallback<AccountLinesResult>(() => makeAccountLinesBody(iss));
+    if (firstResp.error || !firstResp.data) {
+      const message = firstResp.error || "Failed to fetch trustlines";
+      const status = firstResp.error === "all_nodes_failed" ? 503 : 502;
+      return new Response(JSON.stringify({ error: message }), { status });
+    }
 
-    try {
-      // Paginate account_lines for the ISSUER. Each line is the trustline with a counterparty.
-      let marker: any | undefined;
-      const holders: { account: string; amount: number }[] = [];
+    if (firstResp.data.error) {
+      return new Response(
+        JSON.stringify({ error: firstResp.data.error, code: firstResp.data.error_code }),
+        { status: 400 }
+      );
+    }
 
-      do {
-        const reqBody: any = {
-          command: "account_lines",
-          account: iss,
-          ledger_index: "validated",
-          limit: 400,
-        };
-        if (marker) reqBody.marker = marker;
+    const node = firstResp.node;
+    if (!node) {
+      return new Response(JSON.stringify({ error: "No XRPL node available" }), { status: 502 });
+    }
 
-        const resp: any = await client.request(reqBody);
-        marker = resp.result?.marker;
+    const holders: { account: string; amount: number }[] = [];
 
-        for (const line of resp.result?.lines ?? []) {
-          // Match by currency
-          const lineCur: string = String(line.currency || "").toUpperCase();
-          if (lineCur !== cur) continue;
+    const processLines = (lines: AccountLinesResult["lines"]) => {
+      for (const line of lines ?? []) {
+        const lineCur = String(line.currency || "").toUpperCase();
+        if (lineCur !== cur) continue;
 
-          // From the ISSUER's perspective, balances owed to holders are NEGATIVE.
-          // Example: line.balance = "-123.456" means the counterparty holds 123.456 units.
-          const bal = parseFloat(String(line.balance || "0"));
-          const owedToHolder = bal < 0 ? -bal : 0; // only count negative (issuer owes)
-          if (owedToHolder > 0) {
-            const holder = String(line.account || "").trim();
-            holders.push({ account: holder, amount: owedToHolder });
-          }
+        const bal = parseFloat(String(line.balance || "0"));
+        const owedToHolder = bal < 0 ? -bal : 0;
+        if (owedToHolder > 0) {
+          const holder = String(line.account || "").trim();
+          holders.push({ account: holder, amount: owedToHolder });
         }
-      } while (marker);
-
-      // Aggregate (just in case of duplicates — normally there aren't)
-      const map = new Map<string, number>();
-      for (const h of holders) {
-        map.set(h.account, (map.get(h.account) || 0) + h.amount);
       }
-      const rows = Array.from(map.entries()).map(([account, amount]) => ({ account, amount }));
+    };
 
-      // Totals
-      const totalSupply = rows.reduce((a, r) => a + r.amount, 0);
-      const holdersCount = rows.length;
+    processLines(firstResp.data.lines);
 
-      // Sort desc and compute topN %
-      rows.sort((a, b) => b.amount - a.amount);
-      const top = rows.slice(0, Math.max(1, Math.min(topN, rows.length)));
-      const topSum = top.reduce((a, r) => a + r.amount, 0);
-      const topNPercent = totalSupply > 0 ? (topSum / totalSupply) * 100 : 0;
-      const largestPercent = totalSupply > 0 ? (top[0]?.amount / totalSupply) * 100 : 0;
+    let marker = firstResp.data.marker;
 
-      // Attach percent per holder (of total)
-      const topHolders = top.map((r) => ({
-        account: r.account,
-        amount: +r.amount.toFixed(6),
-        percent: totalSupply > 0 ? +( (r.amount / totalSupply) * 100 ).toFixed(2) : 0
-      }));
+    while (marker !== undefined && marker !== null) {
+      const nextResp = await rpcCall<AccountLinesResult>(node, makeAccountLinesBody(iss, marker));
+      if (nextResp.error || !nextResp.data) {
+        const message = nextResp.error || "Failed to fetch trustlines";
+        return new Response(JSON.stringify({ error: message }), { status: 502 });
+      }
+      if (nextResp.data.error) {
+        return new Response(
+          JSON.stringify({ error: nextResp.data.error, code: nextResp.data.error_code }),
+          { status: 400 }
+        );
+      }
+      processLines(nextResp.data.lines);
+      marker = nextResp.data.marker;
+    }
 
-      return new Response(JSON.stringify({
+    const map = new Map<string, number>();
+    for (const h of holders) {
+      map.set(h.account, (map.get(h.account) || 0) + h.amount);
+    }
+    const rows = Array.from(map.entries()).map(([account, amount]) => ({ account, amount }));
+
+    const totalSupply = rows.reduce((a, r) => a + r.amount, 0);
+    const holdersCount = rows.length;
+
+    rows.sort((a, b) => b.amount - a.amount);
+    const top = rows.slice(0, Math.max(1, Math.min(topN, rows.length)));
+    const topSum = top.reduce((a, r) => a + r.amount, 0);
+    const topNPercent = totalSupply > 0 ? (topSum / totalSupply) * 100 : 0;
+    const largestPercent = totalSupply > 0 ? (top[0]?.amount / totalSupply) * 100 : 0;
+
+    const topHolders = top.map((r) => ({
+      account: r.account,
+      amount: +r.amount.toFixed(6),
+      percent: totalSupply > 0 ? +((r.amount / totalSupply) * 100).toFixed(2) : 0,
+    }));
+
+    return new Response(
+      JSON.stringify({
         issuer: iss,
         currency: cur,
         totalSupply: +totalSupply.toFixed(6),
@@ -100,11 +136,14 @@ export async function POST(req: NextRequest) {
         topHolders,
         topNPercent: +topNPercent.toFixed(2),
         largestPercent: +largestPercent.toFixed(2),
-      }), { status: 200 });
-    } finally {
-      try { await client.disconnect(); } catch {}
-    }
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message || "metrics error" }), { status: 400 });
+      }),
+      { status: 200 }
+    );
+  } catch (error: unknown) {
+    const message =
+      typeof (error as { message?: unknown } | undefined)?.message === "string"
+        ? (error as { message: string }).message
+        : "metrics error";
+    return new Response(JSON.stringify({ error: message }), { status: 400 });
   }
 }
