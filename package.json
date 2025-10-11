@@ -6,7 +6,10 @@
     "dev": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next dev",
     "build": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next build",
     "start": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck",
+    "postinstall": "prisma generate || echo 'skip prisma generate'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.74.0",
