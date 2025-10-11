@@ -1,4 +1,5 @@
 # XRglass 🔐
+[![Release](https://github.com/XRglassDEV/XRglass/actions/workflows/release.yml/badge.svg)](https://github.com/XRglassDEV/XRglass/actions/workflows/release.yml)
 
 **XRglass** is a free, open-source tool to **scan XRP tokens, wallets, and projects** for risk.  
 It gives a simple **Trust Score (Green / Orange / Red)** with transparent evidence — helping the XRP community avoid scams, rug pulls, and risky issuers.
