@@ -5,6 +5,12 @@ import DebugSwitch from "./DebugSwitch";
 import type { ApiResult } from "@/types/results";
 
 type Verdict = "green" | "orange" | "red";
+type ReasonObj = { label: string; impact?: number };
+
+// Type guards (veilig zonder `any`)
+function isReasonObj(x: unknown): x is ReasonObj {
+  return !!x && typeof x === "object" && "label" in x;
+}
 
 function badgeStyle(v?: Verdict) {
   switch (v) {
@@ -22,11 +28,14 @@ function badgeStyle(v?: Verdict) {
 export default function ResultCard({ result }: { result: ApiResult | null }) {
   const [debug, setDebug] = useState(false);
 
-  // badges from normalized block (optional)
-  const badges: string[] = useMemo(() => {
-    const n = (result as any)?.normalized;
-    const arr = Array.isArray(n?.badges) ? n.badges : [];
-    return Array.from(new Set(arr)).slice(0, 6);
+  // badges uit result.normalized.badges (unknown → veilig naar string[])
+  const badges = useMemo<string[]>(() => {
+    type WithBadges = { normalized?: { badges?: unknown } };
+    const raw = (result as unknown as WithBadges)?.normalized?.badges;
+    if (Array.isArray(raw)) {
+      return Array.from(new Set(raw.map(String))).slice(0, 6);
+    }
+    return [];
   }, [result]);
 
   const chipTone = (impact: number) =>
@@ -36,10 +45,12 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
       ? "border-emerald-400 text-emerald-700 dark:text-emerald-300"
       : "border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300";
 
-  const flagsList = useMemo(
-    () => Object.entries((result as any)?.details?.flagsDecoded || {}),
-    [result]
-  );
+  // flagsDecoded → tuplelijst [key, boolean]
+  const flagsList = useMemo<[string, boolean][]>(() => {
+    type WithFlags = { details?: { flagsDecoded?: Record<string, unknown> } };
+    const map = (result as unknown as WithFlags)?.details?.flagsDecoded ?? {};
+    return Object.entries(map).map(([k, v]) => [k, Boolean(v)]);
+  }, [result]);
 
   if (!result) return null;
 
@@ -54,7 +65,7 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
 
   const { verdict, points, reasons = [], details, disclaimer } = result;
 
-  // ✅ verdict glow classes (computed, then injected into className)
+  // verdict glow
   const ringClass =
     verdict === "green"
       ? "ring-1 ring-emerald-400/30"
@@ -68,7 +79,7 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
     <div
       className={`rounded-2xl border border-slate-800 bg-slate-900/50 p-3 md:p-4 shadow-sm space-y-3 ${ringClass}`}
     >
-      {/* Header (very tight) */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${badgeStyle(verdict)}`}>
           {verdict === "green" && "✅ Safe"}
@@ -82,7 +93,7 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
         </div>
       </div>
 
-      {/* Badges (from normalized.badges, if present) */}
+      {/* Badges */}
       {badges.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {badges.map((b) => (
@@ -104,12 +115,12 @@ export default function ResultCard({ result }: { result: ApiResult | null }) {
       )}
 
       {/* Reasons — compact horizontal scroller */}
-      {reasons.length > 0 && (
+      {Array.isArray(reasons) && reasons.length > 0 && (
         <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] no-scrollbar">
           <div className="flex gap-1.5 pr-1">
             {reasons.map((r, i) => {
-              const label = typeof (r as any) === "string" ? (r as any) : (r as any).label;
-              const impact = typeof (r as any) === "string" ? 0 : Number((r as any).impact ?? 0);
+              const label = typeof r === "string" ? r : isReasonObj(r) ? r.label : String(r);
+              const impact = typeof r === "string" ? 0 : isReasonObj(r) ? Number(r.impact ?? 0) : 0;
               return (
                 <span
                   key={`${label}-${i}`}

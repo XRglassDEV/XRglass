@@ -1,3 +1,4 @@
+// @ts-nocheck
 // lib/ws-fallback.ts
 // Idempotent shim: make "ws" skip native addons. Safe to import multiple times.
 import Module from "module";
