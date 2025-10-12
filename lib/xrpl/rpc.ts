@@ -3,45 +3,68 @@ export type RpcNode = { url: string; name: string };
 export const RPC_NODES: RpcNode[] = [
   { url: "https://s1.ripple.com:51234/", name: "Ripple S1" },
   { url: "https://s2.ripple.com:51234/", name: "Ripple S2" },
-  { url: "https://xrplcluster.com/",      name: "XRPL Cluster (HTTP)" }
+  { url: "https://xrplcluster.com/",      name: "XRPL Cluster (HTTP)" },
 ];
 
-async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<unknown> {
+type RpcEnvelope = {
+  status?: "success" | "error" | string;
+  result?: unknown;
+  error?: unknown;
+};
+
+async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<RpcEnvelope> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "XRglass/1.0" },
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "XRglass/1.0",
+      },
       body: JSON.stringify(body),
       signal: ctrl.signal,
-      cache: "no-store"
+      cache: "no-store",
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
+
+    const text = await r.text();
+    let json: RpcEnvelope;
+    try {
+      json = JSON.parse(text) as RpcEnvelope;
+    } catch {
+      throw new Error(`HTTP ${r.status} (non-JSON)`);
+    }
+    if (!r.ok) {
+      return json.status ? json : { status: "error", error: `HTTP ${r.status}` };
+    }
+    return json;
   } finally {
     clearTimeout(t);
   }
 }
 
-export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
-  Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
+function unwrapResult<T = unknown>(env: RpcEnvelope): T | undefined {
+  if (env?.result !== undefined) return env.result as T;
+  if (env?.status === "success") return (env as unknown as T);
+  return undefined;
+}
+
+export async function rpcWithFallback<T = unknown>(
+  makeBody: () => unknown
+): Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
   for (const node of RPC_NODES) {
     const start = performance.now();
     try {
-      const json = await postJSON(node.url, makeBody());
+      const env = await postJSON(node.url, makeBody());
       const latency = Math.round(performance.now() - start);
-      if (json?.result || json?.status === "success") {
-        return { data: (json.result ?? json), node, latency };
+      const data = unwrapResult<T>(env);
+      if (data !== undefined) {
+        return { data, node, latency };
       }
+      continue;
     } catch {
       continue;
     }
   }
   return { error: "all_nodes_failed" };
-}
-
-export async function rpcCall<T = unknown>(node: RpcNode, body: unknown, timeoutMs = 8000): Promise<T> {
-  const json = await postJSON(node.url, body, timeoutMs);
-  return (json?.result ?? json) as T;
 }

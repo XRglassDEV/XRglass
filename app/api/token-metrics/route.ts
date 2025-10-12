@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-import { RpcNode, rpcCall, rpcWithFallback } from "@/lib/xrpl/rpc";
+import { rpcWithFallback } from "@/lib/xrpl/rpc";
 
 type AccountLine = {
   account?: string;
@@ -39,7 +39,6 @@ export async function POST(req: NextRequest) {
     const isHexCurrency = /^[A-F0-9]{40}$/i.test(curRaw);
     const cur = isHexCurrency ? curRaw.toUpperCase() : curRaw.toUpperCase(); // XRPL uses uppercase codes
 
-    let selectedNode: RpcNode | undefined;
     const holders: { account: string; amount: number }[] = [];
 
     async function fetchLines(marker?: unknown): Promise<AccountLinesResult> {
@@ -50,20 +49,10 @@ export async function POST(req: NextRequest) {
       };
       if (marker) params.marker = marker;
       const body = { method: "account_lines", params: [params] };
-
-      if (selectedNode) {
-        try {
-          return await rpcCall<AccountLinesResult>(selectedNode, body);
-        } catch {
-          selectedNode = undefined;
-        }
-      }
-
       const resp = await rpcWithFallback<AccountLinesResult>(() => body);
       if (resp.error || !resp.data) {
         throw new Error(resp.error || "rpc_failed");
       }
-      selectedNode = resp.node ?? selectedNode;
       return resp.data;
     }
 

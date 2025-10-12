@@ -8,7 +8,7 @@ import TrustStats from "@/components/TrustStats";
 import StatusBadge from "@/components/StatusBadge";
 import WatchlistSection from "@/components/watchlist/WatchlistSection";
 import type { ApiResult } from "@/types/results";
-import type { Verdict } from "@/types/api";
+import { normalizeVerdict, type Verdict as VerdictColor } from "@/lib/utils/verdict";
 
 /* Helpers */
 function isWalletAddress(s: string): boolean {
@@ -26,7 +26,7 @@ function shorten(s: string, n = 14) {
 type RecentItem = {
   q: string;
   type: "wallet" | "project";
-  verdict?: Verdict | null;
+  verdict?: VerdictColor | null;
   ts: number;
 };
 const RECENT_KEY = "xrpulse_recent_scans";
@@ -101,7 +101,7 @@ export default function Home() {
       setResult(data);
 
       // log only if ok
-      const verdictForLog = data.status === "ok" ? data.verdict : "unknown";
+      const verdict = data.status === "ok" ? normalizeVerdict(data.verdict) : undefined;
       const scoreForLog = data.status === "ok" ? data.details?.score ?? null : null;
       const detailsForLog = data.status === "ok" ? data.details ?? {} : {};
 
@@ -111,7 +111,7 @@ export default function Home() {
         body: JSON.stringify({
           query: q,
           type: kind,
-          verdict: verdictForLog,
+          verdict,
           score: scoreForLog,
           details: detailsForLog,
         }),
@@ -129,7 +129,7 @@ export default function Home() {
       const item: RecentItem = {
         q,
         type: kind,
-        verdict: data.status === "ok" ? data.verdict : null,
+        verdict: verdict ?? null,
         ts: Date.now(),
       };
       setRecent((prev) => {
