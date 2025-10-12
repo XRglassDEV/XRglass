@@ -4,12 +4,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { Client } from "xrpl";
+
+import { rpcCall, rpcWithFallback } from "@/lib/xrpl/rpc";
 
 import { ScoreResult, Reason as NormReason } from "@/lib/score";
 import type { ApiResponse, ApiOk, ApiErr, Verdict as ApiVerdict } from "@/types/api";
 
-const XRPL_ENDPOINT = "wss://s1.ripple.com";
 const TRUSTED_WALLETS = new Set<string>([
   "rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh", // Ripple donation
 ]);
@@ -86,6 +86,7 @@ type LedgerResponse = {
     };
   };
 };
+type LedgerResult = LedgerResponse["result"];
 
 function ok(
   verdict: Verdict,
@@ -149,33 +150,26 @@ function toNormReason(label: string, impact: number): NormReason {
   return { code, label, weight: -impact };
 }
 
-function isAccountInfoResponse(value: unknown): value is AccountInfoResponse {
+function isLedgerResult(value: unknown): value is LedgerResult {
   return (
     typeof value === "object" &&
     value !== null &&
-    "result" in value &&
-    typeof (value as { result?: unknown }).result === "object" &&
-    (value as AccountInfoResponse).result?.account_data !== undefined
-  );
-}
-
-function isAccountTxResponse(value: unknown): value is AccountTxResponse {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    Array.isArray((value as AccountTxResponse).result?.transactions)
-  );
-}
-
-function isLedgerResponse(value: unknown): value is LedgerResponse {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as LedgerResponse).result?.ledger === "object"
+    typeof (value as LedgerResult).ledger === "object"
   );
 }
 
 function parseXrplErrorCode(error: unknown): string | null {
+  if (typeof error === "object" && error !== null) {
+    if ("error" in error && typeof (error as { error?: unknown }).error === "string") {
+      return (error as { error: string }).error;
+    }
+    if (
+      "error_message" in error &&
+      typeof (error as { error_message?: unknown }).error_message === "string"
+    ) {
+      return (error as { error_message: string }).error_message;
+    }
+  }
   if (
     typeof error === "object" &&
     error !== null &&
@@ -190,23 +184,31 @@ function parseXrplErrorCode(error: unknown): string | null {
   return null;
 }
 
-async function getAccountAgeDays(client: Client, address: string): Promise<number | null> {
+async function getAccountAgeDays(address: string): Promise<number | null> {
   try {
-    const txResponse = await client.request({
-      command: "account_tx",
-      account: address,
-      ledger_index_min: -1,
-      ledger_index_max: -1,
-      forward: true,
-      limit: 1,
-    });
+    const txResponse = await rpcWithFallback(() => ({
+      method: "account_tx",
+      params: [
+        {
+          account: address,
+          ledger_index_min: -1,
+          ledger_index_max: -1,
+          forward: true,
+          limit: 1,
+        },
+      ],
+    }));
 
-    if (!isAccountTxResponse(txResponse)) {
+    if (txResponse.error) {
       return null;
     }
 
-    const first = txResponse.result.transactions[0];
-    if (!first) return null;
+    const txResult = txResponse.data as AccountTxResponse["result"] | undefined;
+    if (!txResult || !Array.isArray(txResult.transactions) || txResult.transactions.length === 0) {
+      return null;
+    }
+
+    const first = txResult.transactions[0];
 
     const txLedgerIndex =
       typeof first.tx === "object" &&
@@ -220,18 +222,36 @@ async function getAccountAgeDays(client: Client, address: string): Promise<numbe
 
     if (ledgerIndex === null) return null;
 
-    const ledgerResponse = await client.request({
-      command: "ledger",
-      ledger_index: ledgerIndex,
-      transactions: false,
-      expand: false,
+    const ledgerBody = () => ({
+      method: "ledger",
+      params: [
+        {
+          ledger_index: ledgerIndex,
+          transactions: false,
+          expand: false,
+        },
+      ],
     });
 
-    if (!isLedgerResponse(ledgerResponse)) {
+    let ledgerData: LedgerResult | null = null;
+    if (txResponse.node) {
+      try {
+        ledgerData = await rpcCall(txResponse.node, ledgerBody());
+      } catch {
+        ledgerData = null;
+      }
+    }
+    if (!ledgerData) {
+      const fallbackLedger = await rpcWithFallback(ledgerBody);
+      if (fallbackLedger.error) return null;
+      ledgerData = fallbackLedger.data as LedgerResult;
+    }
+
+    if (!isLedgerResult(ledgerData)) {
       return null;
     }
 
-    const closeTime = ledgerResponse.result.ledger?.close_time;
+    const closeTime = ledgerData.ledger?.close_time;
     if (typeof closeTime !== "number") return null;
 
     const rippleEpochMs = (closeTime + 946_684_800) * 1000;
@@ -284,30 +304,43 @@ export async function GET(req: Request) {
     });
   }
 
-  let client: Client | null = null;
-
   try {
-    client = new Client(XRPL_ENDPOINT);
-    await client.connect();
+    const infoResp = await rpcWithFallback<AccountInfoResponse["result"]>(() => ({
+      method: "account_info",
+      params: [
+        {
+          account: address,
+          ledger_index: "validated",
+          strict: true,
+        },
+      ],
+    }));
 
-    let accountData: AccountInfoResponse["result"]["account_data"];
-    try {
-      const info = await client.request({
-        command: "account_info",
-        account: address,
-        ledger_index: "validated",
-        strict: true,
+    if (infoResp.error) {
+      const isNetwork = infoResp.error === "all_nodes_failed";
+      return NextResponse.json<ApiResponse>(
+        err(
+          isNetwork
+            ? "XRPL RPC nodes are unavailable"
+            : "Failed to retrieve account information",
+          infoResp.error
+        ),
+        { status: isNetwork ? 503 : 502 }
+      );
+    }
+
+    const info = infoResp.data as AccountInfoResponse["result"] & {
+      error?: string;
+      error_message?: string;
+    };
+    if (!info || typeof info !== "object") {
+      return NextResponse.json<ApiResponse>(err("Account lookup failed"), {
+        status: 502,
       });
+    }
 
-      if (!isAccountInfoResponse(info)) {
-        return NextResponse.json<ApiResponse>(err("Account lookup failed"), {
-          status: 502,
-        });
-      }
-
-      accountData = info.result.account_data;
-    } catch (error) {
-      const code = parseXrplErrorCode(error) ?? undefined;
+    if (info.error) {
+      const code = parseXrplErrorCode(info) ?? info.error;
       if (code && /accountMalformed|actMalformed/i.test(code)) {
         return NextResponse.json<ApiResponse>(err("Invalid XRP address", code), {
           status: 400,
@@ -345,13 +378,21 @@ export async function GET(req: Request) {
       );
     }
 
+    const accountData = (info as {
+      account_data?: AccountInfoResponse["result"]["account_data"];
+    }).account_data;
+    if (!accountData) {
+      return NextResponse.json<ApiResponse>(err("Account lookup failed"), {
+        status: 502,
+      });
+    }
     const flags = typeof accountData.Flags === "number" ? accountData.Flags : undefined;
     const ownerCount = Number(accountData.OwnerCount ?? 0);
     const regKey = typeof accountData.RegularKey === "string" ? accountData.RegularKey : undefined;
     const domainHex = typeof accountData.Domain === "string" ? accountData.Domain : null;
 
     const { domain, tomlFound, addressListed } = await checkXrpToml(address, domainHex);
-    const accountAgeDays = await getAccountAgeDays(client, address);
+    const accountAgeDays = await getAccountAgeDays(address);
 
     const flagsDecoded: FlagsDecoded = {
       RequireDestTag: hasFlag(flags, FLAGS.lsfRequireDestTag),
@@ -478,11 +519,5 @@ export async function GET(req: Request) {
     return NextResponse.json<ApiResponse>(err("Internal server error", code), {
       status: 500,
     });
-  } finally {
-    try {
-      await client?.disconnect();
-    } catch {
-      // ignore disconnect errors
-    }
   }
 }
