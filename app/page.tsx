@@ -7,6 +7,7 @@ import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
 import type { ApiResult } from "@/types/results";
 import type { Verdict } from "@/types/api";
+import WatchlistSection from "./_watchlist_section";
 
 /* Helpers */
 function isWalletAddress(s: string): boolean {
@@ -307,6 +308,8 @@ export default function Home() {
           Beta heuristics only — always double-check before sending funds.
         </p>
       </section>
+      { /* XRglass Watchlist Section */ }
+      <WatchlistSection />
     </main>
   );
 }
