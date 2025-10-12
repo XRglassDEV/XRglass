@@ -1,4 +1,5 @@
 name: Release (standard-version)
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,44 +7,85 @@ on:
         description: "Version bump (auto | patch | minor | major)"
         required: false
         default: "auto"
+  push:
+    branches: [ main ]   # also run automatically on main
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   release:
-    permissions:
-      contents: write   # allow pushing tags & changelog commits
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed so standard-version can see full history
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
+          cache: npm
 
-      - run: npm ci
+      - name: Install
+        run: npm ci
 
-      # Safety: ensure repo still builds & types pass
-      - run: npm run check
-      - run: npm run build
+      - name: Typecheck
+        run: npm run check
 
-      # Determine bump strategy
+      - name: Build
+        run: npm run build
+
+      - name: Configure git identity (repo-local)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --list --show-origin | grep -E 'user.name|user.email' || true
+
       - name: Run standard-version
+        id: sv
+        shell: bash
         run: |
-          if [ "${{ github.event.inputs.bump }}" = "auto" ] || [ -z "${{ github.event.inputs.bump }}" ]; then
-            npm run release
+          set -e
+          BUMP="${{ github.event.inputs.bump }}"
+          if [ "${BUMP:-auto}" = "auto" ] || [ -z "$BUMP" ]; then
+            npx standard-version -y || true
           else
-            npm run release -- --release-as "${{ github.event.inputs.bump }}"
+            npx standard-version -y --release-as "$BUMP" || true
           fi
+          # Skip cleanly when there are no matching commits
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      # Push changelog + tags back to the repo
-      - name: Push tags and changes
+      - name: Ensure push auth (set origin with GITHUB_TOKEN)
+        if: steps.sv.outputs.skipped != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git push --follow-tags origin HEAD:${GITHUB_REF#refs/heads/}
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git remote -v
 
-      # Create a GitHub Release from the tag (optional but nice)
+      - name: Push tags and changes
+        if: steps.sv.outputs.skipped != 'true'
+        run: |
+          git push origin HEAD:main
+          git push origin --tags
+
       - name: Create GitHub Release
+        if: steps.sv.outputs.skipped != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.sv.outputs.tag }}
+          name: ${{ steps.sv.outputs.tag }}
           generate_release_notes: true
+          files: |
+            CHANGELOG.md
+
+      - name: No-op
+        if: steps.sv.outputs.skipped == 'true'
+        run: echo "Release skipped (no conventional commits)."
