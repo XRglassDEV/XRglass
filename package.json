@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next dev",
-    "build": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next build",
+    "build": "node scripts/build-with-meta.mjs",
     "start": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next start",
     "lint": "next lint || true",
     "typecheck": "tsc --noEmit",
