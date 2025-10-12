@@ -1,0 +1,75 @@
+name: Release Prepare (standard-version → PR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Bump type: auto | patch | minor | major"
+        required: false
+        default: "auto"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+      # Run standard-version but DO NOT tag. We'll tag after merge.
+      - name: Run standard-version (no tag)
+        id: sv
+        shell: bash
+        run: |
+          set -e
+          BUMP="${{ github.event.inputs.bump }}"
+          CMD="npx standard-version -y --skip.tag"
+          if [ -n "$BUMP" ] && [ "$BUMP" != "auto" ]; then
+            CMD="$CMD --release-as $BUMP"
+          fi
+          # Allow no-op without failing
+          if $CMD; then
+            :
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR with bump + changelog
+        if: steps.sv.outputs.skip != 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: release/v${{ steps.sv.outputs.version }}
+          title: "chore(release): v${{ steps.sv.outputs.version }}"
+          commit-message: "chore(release): v${{ steps.sv.outputs.version }}"
+          body: |
+            This PR bumps version to **v${{ steps.sv.outputs.version }}** and updates `CHANGELOG.md`.
+            Merge to main to create the tag and publish a GitHub Release.
+          labels: release
+          signoff: false
+
+      - name: Nothing to release
+        if: steps.sv.outputs.skip == 'true'
+        run: echo "No Conventional Commit changes since last release. Skipping."

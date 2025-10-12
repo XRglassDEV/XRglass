@@ -1,0 +1,45 @@
+name: Release Tag & Publish
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'package.json'
+      - 'CHANGELOG.md'
+
+permissions:
+  contents: write
+
+jobs:
+  tag_and_release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Read version
+        id: v
+        run: echo "VER=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create tag if missing
+        run: |
+          TAG=${{ steps.v.outputs.VER }}
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.VER }}
+          name: ${{ steps.v.outputs.VER }}
+          generate_release_notes: true
+          files: |
+            CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
