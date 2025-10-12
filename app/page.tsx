@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import ResultCard from "@/components/ResultCard";
 import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
+import WatchlistSection from "@/components/watchlist/WatchlistSection";
 import type { ApiResult } from "@/types/results";
 import type { Verdict } from "@/types/api";
 
@@ -307,6 +308,7 @@ export default function Home() {
           Beta heuristics only — always double-check before sending funds.
         </p>
       </section>
+      <WatchlistSection />
     </main>
   );
 }
