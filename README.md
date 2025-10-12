@@ -36,30 +36,40 @@ It gives a simple **Trust Score (Green / Orange / Red)** with transparent eviden
 ## ⚡ Getting Started (local dev)
 
 1. Clone the repo:
+
    ```bash
    git clone https://github.com/XRglass/xtrustscore.git
    cd xtrustscore
+   ```
 
 2. Install dependencies:
 
-npm install
+   ```bash
+   npm install
+   ```
 
-3. Create a .env.local file:
+3. Create a `.env.local` file:
 
-ini
-XRPL_WSS=wss://xrplcluster.com
+   ```ini
+   XRPL_WSS=wss://xrplcluster.com
+   ```
 
 4. Run the dev server:
 
-npm run dev
-Open http://localhost:3000.
+   ```bash
+   npm run dev
+   ```
+
+   Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
 🚀 Deployment
 Deployed on Vercel: every push to main auto-builds.
 
 To deploy manually:
 
+```bash
 vercel --prod
+```
 
 
 ⚠️ Disclaimer
