@@ -7,6 +7,11 @@ export type ApiDetails = Record<string, unknown> & {
   reasons?: string[];
 };
 
+export type NormalizedShape = {
+  verdict?: Verdict | null;
+  [key: string]: unknown;
+};
+
 export type ApiOk = {
   status: "ok";
   verdict: Verdict;
@@ -14,7 +19,7 @@ export type ApiOk = {
   reasons?: ReasonLike[];
   details?: ApiDetails;
   disclaimer?: string;
-  normalized?: unknown;
+  normalized?: NormalizedShape | NormalizedShape[] | null;
   signals?: Array<Record<string, unknown>>;
   [key: string]: unknown;
 };

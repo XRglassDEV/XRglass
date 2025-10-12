@@ -2,15 +2,23 @@
 import { NextResponse } from "next/server";
 
 import { supabase } from "@/lib/supabaseClient";
-import type { ApiResponse, ApiOk, ApiErr } from "@/types/api";
+import type { ApiResponse, ApiOk, ApiErr, Verdict } from "@/types/api";
 
 type LogPayload = {
   query: string;
   type: string;
-  verdict: string;
+  verdict: Verdict;
   score: number | null;
   details: Record<string, unknown>;
 };
+
+const VERDICTS: Verdict[] = ["green", "orange", "red", "unknown"];
+
+function normalizeVerdict(value: unknown): Verdict {
+  if (typeof value !== "string") return "unknown";
+  const cleaned = value.trim().toLowerCase();
+  return (VERDICTS.includes(cleaned as Verdict) ? cleaned : "unknown") as Verdict;
+}
 
 function ok(extra: Omit<ApiOk, "status" | "verdict"> = {}): ApiOk {
   return { status: "ok", verdict: "unknown", ...extra };
@@ -28,9 +36,9 @@ function parsePayload(value: unknown): LogPayload | null {
   const record = value as Record<string, unknown>;
   const query = typeof record.query === "string" ? record.query.trim() : "";
   const type = typeof record.type === "string" ? record.type.trim() : "";
-  const verdict = typeof record.verdict === "string" ? record.verdict.trim() : "";
+  const verdict = normalizeVerdict(record.verdict);
 
-  if (!query || !type || !verdict) {
+  if (!query || !type) {
     return null;
   }
 
