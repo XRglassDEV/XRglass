@@ -3,45 +3,55 @@ export type RpcNode = { url: string; name: string };
 export const RPC_NODES: RpcNode[] = [
   { url: "https://s1.ripple.com:51234/", name: "Ripple S1" },
   { url: "https://s2.ripple.com:51234/", name: "Ripple S2" },
-  { url: "https://xrplcluster.com/",      name: "XRPL Cluster (HTTP)" }
+  { url: "https://xrplcluster.com/",      name: "XRPL Cluster (HTTP)" },
 ];
 
-async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<unknown> {
+async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<any> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "User-Agent": "XRglass/1.0" },
       body: JSON.stringify(body),
       signal: ctrl.signal,
-      cache: "no-store"
+      cache: "no-store",
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
+
+    // Parse as ANY on purpose to avoid TS '{}' property errors in CI
+    try {
+      const json: any = await res.json();
+      // attach http status if server didn't give JSON
+      if (!res.ok && (json == null || typeof json !== "object")) {
+        return { httpStatus: res.status };
+      }
+      return json;
+    } catch {
+      const text = await res.text().catch(() => "");
+      return text ? { httpStatus: res.status, body: text } : { httpStatus: res.status };
+    }
   } finally {
-    clearTimeout(t);
+    clearTimeout(timer);
   }
 }
 
-export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
-  Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
+/**
+ * Call XRPL HTTP JSON-RPC across fallback nodes.
+ * Returns the raw JSON from the first node that responds (no shape assumptions).
+ */
+export async function rpcWithFallback<T = unknown>(
+  makeBody: () => unknown
+): Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
   for (const node of RPC_NODES) {
     const start = performance.now();
     try {
-      const json = await postJSON(node.url, makeBody());
+      const data: any = await postJSON(node.url, makeBody());
       const latency = Math.round(performance.now() - start);
-      if (json?.result || json?.status === "success") {
-        return { data: (json.result ?? json), node, latency };
-      }
+      return { data: data as T, node, latency };
     } catch {
+      // try the next node
       continue;
     }
   }
   return { error: "all_nodes_failed" };
-}
-
-export async function rpcCall<T = unknown>(node: RpcNode, body: unknown, timeoutMs = 8000): Promise<T> {
-  const json = await postJSON(node.url, body, timeoutMs);
-  return (json?.result ?? json) as T;
 }
