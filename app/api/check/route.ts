@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 
-import { rpcCall, rpcWithFallback } from "@/lib/xrpl/rpc";
+import { rpcWithFallback } from "@/lib/xrpl/rpc";
 
 import { ScoreResult, Reason as NormReason } from "@/lib/score";
 import type { ApiResponse, ApiOk, ApiErr, Verdict as ApiVerdict } from "@/types/api";
@@ -233,19 +233,11 @@ async function getAccountAgeDays(address: string): Promise<number | null> {
       ],
     });
 
-    let ledgerData: LedgerResult | null = null;
-    if (txResponse.node) {
-      try {
-        ledgerData = await rpcCall(txResponse.node, ledgerBody());
-      } catch {
-        ledgerData = null;
-      }
+    const ledgerResponse = await rpcWithFallback<LedgerResult>(ledgerBody);
+    if (ledgerResponse.error || !ledgerResponse.data) {
+      return null;
     }
-    if (!ledgerData) {
-      const fallbackLedger = await rpcWithFallback(ledgerBody);
-      if (fallbackLedger.error) return null;
-      ledgerData = fallbackLedger.data as LedgerResult;
-    }
+    const ledgerData = ledgerResponse.data;
 
     if (!isLedgerResult(ledgerData)) {
       return null;
