@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { logScan } from "@/lib/analytics/clientLog";
 
 type Verdict = "green" | "orange" | "red";
 type WLItem = {
@@ -61,33 +62,56 @@ export default function WatchlistSection() {
   }
 
   async function runCheck(it: WLItem) {
-    const r = await fetch(`/api/project-check?address=${encodeURIComponent(it.target)}`);
-    const j = await r.json().catch(() => null);
-    if (!j || j.status !== "ok") return;
+    const target = it.target;
+    try {
+      const r = await fetch(`/api/project-check?address=${encodeURIComponent(target)}`, {
+        cache: "no-store",
+      });
+      if (!r.ok) {
+        logScan({ ts: Date.now(), target, ok: false });
+        return;
+      }
+      const j = await r.json().catch(() => null);
+      if (!j || j.status !== "ok") {
+        logScan({ ts: Date.now(), target, ok: false });
+        return;
+      }
 
-    const updated: WLItem = {
-      ...it,
-      lastVerdict: j.verdict as Verdict,
-      lastCheckedAt: new Date().toISOString(),
-    };
-    setItems((prev) => prev.map((p) => (p.id === it.id ? updated : p)));
+      logScan({
+        ts: Date.now(),
+        target,
+        ok: true,
+        verdict: j.verdict as Verdict,
+        node: j.node,
+        latency: j.latency,
+      });
 
-    const shouldNotify = priority(j.verdict as Verdict) >= priority(it.threshold);
-    if (shouldNotify && it.webhook) {
-      fetch(it.webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "XRglass",
-          type: it.type,
-          target: it.target,
-          verdict: j.verdict,
-          node: j.node,
-          latency: j.latency,
-          checkedAt: updated.lastCheckedAt,
-        }),
-        keepalive: true,
-      }).catch(() => {});
+      const updated: WLItem = {
+        ...it,
+        lastVerdict: j.verdict as Verdict,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      setItems((prev) => prev.map((p) => (p.id === it.id ? updated : p)));
+
+      const shouldNotify = priority(j.verdict as Verdict) >= priority(it.threshold);
+      if (shouldNotify && it.webhook) {
+        fetch(it.webhook, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source: "XRglass",
+            type: it.type,
+            target: it.target,
+            verdict: j.verdict,
+            node: j.node,
+            latency: j.latency,
+            checkedAt: updated.lastCheckedAt,
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {
+      logScan({ ts: Date.now(), target, ok: false });
     }
   }
 

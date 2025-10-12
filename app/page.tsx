@@ -6,9 +6,11 @@ import ResultCard from "@/components/ResultCard";
 import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
 import StatusBadge from "@/components/StatusBadge";
+import AnalyticsBar from "@/components/AnalyticsBar";
 import WatchlistSection from "@/components/watchlist/WatchlistSection";
 import type { ApiResult } from "@/types/results";
 import type { Verdict } from "@/types/api";
+import { logScan } from "@/lib/analytics/clientLog";
 
 /* Helpers */
 function isWalletAddress(s: string): boolean {
@@ -97,6 +99,15 @@ export default function Home() {
       const res = await fetch(url);
       const data = (await res.json()) as ApiResult;
 
+      logScan({
+        ts: Date.now(),
+        target: q,
+        ok: data?.status === "ok",
+        verdict: data?.status === "ok" ? ((data as any)?.verdict as Verdict | undefined) : undefined,
+        node: (data as any)?.node,
+        latency: (data as any)?.latency,
+      });
+
       // keep full union for the UI below
       setResult(data);
 
@@ -141,6 +152,7 @@ export default function Home() {
         return next;
       });
     } catch (e) {
+      logScan({ ts: Date.now(), target: q, ok: false });
       console.error(e);
       setResult({
         status: "error",
@@ -310,6 +322,7 @@ export default function Home() {
         </p>
       </section>
       <StatusBadge />
+      <AnalyticsBar />
       <WatchlistSection />
       <footer className="mt-10 text-xs text-slate-500">
         Build: {process.env.NEXT_PUBLIC_GIT_BRANCH ?? "unknown"} @ {(process.env.NEXT_PUBLIC_GIT_COMMIT ?? "unknown").slice(0,7)}
