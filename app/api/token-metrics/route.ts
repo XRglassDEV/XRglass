@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-import { RpcNode, rpcCall, rpcWithFallback } from "@/lib/xrpl/rpc";
+import { RpcNode, rpcWithFallback } from "@/lib/xrpl/rpc";
 
 type AccountLine = {
   account?: string;
@@ -49,17 +49,9 @@ export async function POST(req: NextRequest) {
         limit: 400,
       };
       if (marker) params.marker = marker;
-      const body = { method: "account_lines", params: [params] };
+      const makeBody = () => ({ method: "account_lines", params: [params] });
 
-      if (selectedNode) {
-        try {
-          return await rpcCall<AccountLinesResult>(selectedNode, body);
-        } catch {
-          selectedNode = undefined;
-        }
-      }
-
-      const resp = await rpcWithFallback<AccountLinesResult>(() => body);
+      const resp = await rpcWithFallback<AccountLinesResult>(makeBody, selectedNode);
       if (resp.error || !resp.data) {
         throw new Error(resp.error || "rpc_failed");
       }

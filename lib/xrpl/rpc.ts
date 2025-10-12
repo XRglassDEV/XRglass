@@ -24,12 +24,36 @@ async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<u
   }
 }
 
-export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
-  Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
-  for (const node of RPC_NODES) {
+type BodyFactory = () => unknown;
+
+function resolveBody(body: unknown | BodyFactory): unknown {
+  return typeof body === "function" ? (body as BodyFactory)() : body;
+}
+
+function orderNodes(preferred?: RpcNode): RpcNode[] {
+  if (!preferred) return [...RPC_NODES];
+  const nodes = [...RPC_NODES];
+  const index = nodes.findIndex((node) => node.url === preferred.url);
+  if (index === 0) {
+    return nodes;
+  }
+  if (index > 0) {
+    const [node] = nodes.splice(index, 1);
+    nodes.unshift(node);
+    return nodes;
+  }
+  return [preferred, ...nodes];
+}
+
+export async function rpcWithFallback<T = unknown>(
+  body: unknown | BodyFactory,
+  preferredNode?: RpcNode,
+  timeoutMs = 8000
+): Promise<{ data?: T; node?: RpcNode; latency?: number; error?: string }> {
+  for (const node of orderNodes(preferredNode)) {
     const start = performance.now();
     try {
-      const json = await postJSON(node.url, makeBody());
+      const json = await postJSON(node.url, resolveBody(body), timeoutMs);
       const latency = Math.round(performance.now() - start);
       if (json?.result || json?.status === "success") {
         return { data: (json.result ?? json), node, latency };
@@ -41,7 +65,3 @@ export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
   return { error: "all_nodes_failed" };
 }
 
-export async function rpcCall<T = unknown>(node: RpcNode, body: unknown, timeoutMs = 8000): Promise<T> {
-  const json = await postJSON(node.url, body, timeoutMs);
-  return (json?.result ?? json) as T;
-}
