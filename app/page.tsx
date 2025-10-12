@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import ResultCard from "@/components/ResultCard";
 import LoadingScan from "@/components/LoadingScan";
 import TrustStats from "@/components/TrustStats";
+import StatusBadge from "@/components/StatusBadge";
+import WatchlistSection from "@/components/watchlist/WatchlistSection";
 import type { ApiResult } from "@/types/results";
 import type { Verdict } from "@/types/api";
 
@@ -89,7 +91,7 @@ export default function Home() {
     const url =
       kind === "wallet"
         ? `/api/check?address=${encodeURIComponent(q)}`
-        : `/api/project-check?domain=${encodeURIComponent(q)}`;
+        : `/api/project?domain=${encodeURIComponent(q)}`;
 
     try {
       const res = await fetch(url);
@@ -307,6 +309,11 @@ export default function Home() {
           Beta heuristics only — always double-check before sending funds.
         </p>
       </section>
+      <StatusBadge />
+      <WatchlistSection />
+      <footer className="mt-10 text-xs text-slate-500">
+        Build: {process.env.NEXT_PUBLIC_GIT_BRANCH ?? "unknown"} @ {(process.env.NEXT_PUBLIC_GIT_COMMIT ?? "unknown").slice(0,7)}
+      </footer>
     </main>
   );
 }
