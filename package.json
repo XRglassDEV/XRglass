@@ -6,8 +6,8 @@
     "dev": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next dev",
     "build": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next build",
     "start": "WS_NO_BUFFER_UTIL=1 WS_NO_UTF_8_VALIDATE=1 next start",
-    "lint": "next lint || true",
     "typecheck": "tsc --noEmit",
+    "lint": "next lint || true",
     "check": "npm run typecheck",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
@@ -40,5 +40,8 @@
   "overrides": {
     "bufferutil": "0.0.0-unsupported",
     "utf-8-validate": "0.0.0-unsupported"
+  },
+  "engines": {
+    "node": ">=18 <23"
   }
 }
