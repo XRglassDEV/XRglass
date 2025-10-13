@@ -2,12 +2,18 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { computeWalletScore } from "../../../../lib/scoring-wallet";
+import { fetchAccountInfo as fetchAccountInfoHttp } from "../../../../lib/xrpl-client";
 
 // Allow override via env: comma-separated list
 const DEFAULT_ENDPOINTS = [
-  "https://xrplcluster.com",          // Anycast, JSON-RPC
-  "https://s1.ripple.com:51234",      // Ripple public
-  "https://rippled.xrpscan.com"       // XRPSCAN relay
+  "https://xrplcluster.com",
+  "https://xrpl.ws",
+  "https://xrpl.link",
+  "https://s1.ripple.com:51234",
+  "https://xrpl.org/data/api/v1/",
+  "https://rippled.xrpscan.com",
+  "https://xrpl.node.robustwallet.io",
+  "https://public.xrplnode.org:51234",
 ];
 
 function getRpcEndpoints(): string[] {
@@ -40,11 +46,14 @@ async function rpcRequest<T=any>(url: string, body: any, timeoutMs = 5000): Prom
   }
 }
 
-async function rpcWithFallback<T=any>(body: any, endpoints = getRpcEndpoints()): Promise<T> {
+type RpcFallbackResult<T> = { endpoint: string; result: T };
+
+async function rpcWithFallback<T=any>(body: any, endpoints = getRpcEndpoints()): Promise<RpcFallbackResult<T>> {
   let lastErr: any = null;
   for (const ep of endpoints) {
     try {
-      return await rpcRequest<T>(ep, body);
+      const result = await rpcRequest<T>(ep, body);
+      return { endpoint: ep, result };
     } catch (e) {
       lastErr = e;
     }
@@ -64,22 +73,48 @@ export async function GET(req: Request) {
       );
     }
 
+    const endpoints = getRpcEndpoints();
+
     // 1) account_info
-    let accountInfo: any = null;
-    try {
-      accountInfo = await rpcWithFallback({
-        method: "account_info",
-        params: [{ account: address, ledger_index: "validated" }]
-      });
-    } catch (e: any) {
-      // If account not found, rippled returns an error; we handle that downstream as a signal
-      accountInfo = null;
+    const info = await fetchAccountInfoHttp(address, endpoints);
+
+    const accountInfoResult = info?.data?.result ?? info?.data;
+    const accountInfoData = accountInfoResult?.account_data ?? null;
+    const accountInfoEndpoint = info?.endpoint ?? null;
+
+    const infoMessageRaw = typeof info?.message === "string"
+      ? info.message
+      : typeof accountInfoResult?.error_message === "string"
+        ? accountInfoResult.error_message
+        : undefined;
+
+    const errorFields = [
+      accountInfoResult?.error,
+      accountInfoResult?.error_message,
+      infoMessageRaw,
+    ]
+      .filter((v) => typeof v === "string")
+      .map((v) => (v as string).toLowerCase())
+      .join(" ");
+
+    const accountNotFound = /actnotfound|account not found/.test(errorFields);
+
+    if (!info?.ok && !accountNotFound) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: infoMessageRaw ?? "Failed to fetch XRPL account info.",
+          tried: info?.tried ?? endpoints,
+        },
+        { status: 504 }
+      );
     }
 
     // 2) account_tx (last 20)
     let txs: any[] = [];
+    let transactionsEndpoint: string | null = null;
     try {
-      const resp: any = await rpcWithFallback({
+      const txResponse = await rpcWithFallback({
         method: "account_tx",
         params: [{
           account: address,
@@ -88,7 +123,9 @@ export async function GET(req: Request) {
           limit: 20,
           forward: false
         }]
-      });
+      }, endpoints);
+      const resp: any = txResponse.result;
+      transactionsEndpoint = txResponse.endpoint;
       txs = resp?.transactions || resp?.result?.transactions || [];
     } catch (e) {
       // Non-fatal
@@ -97,14 +134,25 @@ export async function GET(req: Request) {
 
     const data = {
       address,
-      accountInfo: accountInfo ?? null,
+      accountInfo: accountInfoData ?? null,
       transactions: txs,
       fetchedAt: new Date().toISOString(),
     };
 
     const scored = computeWalletScore(data);
+    const debug = {
+      accountInfoNode: accountInfoEndpoint,
+      transactionsNode: transactionsEndpoint,
+      accountInfoStatus: info?.ok ? "ok" : accountNotFound ? "not_found" : infoMessageRaw ?? "unknown",
+      accountInfoTried: info?.tried ?? endpoints,
+    };
     return NextResponse.json(
-      { status: "ok", ...scored, raw: { hasAccount: !!accountInfo, txCount: txs.length } },
+      {
+        status: "ok",
+        ...scored,
+        raw: { hasAccount: !!accountInfoData, txCount: txs.length },
+        debug,
+      },
       { status: 200 }
     );
   } catch (err: any) {
