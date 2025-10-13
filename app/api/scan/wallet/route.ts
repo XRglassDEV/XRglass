@@ -2,6 +2,7 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { computeWalletScore } from "../../../../lib/scoring-wallet";
+import { isTrustedWallet, trustedLabel } from "../../../../lib/allowlists";
 
 // Allow override via env: comma-separated list
 const DEFAULT_ENDPOINTS = [
@@ -103,8 +104,28 @@ export async function GET(req: Request) {
     };
 
     const scored = computeWalletScore(data);
+    // If address is on trusted allowlist, force green verdict and add a signal
+    if (isTrustedWallet(address)) {
+      const label = trustedLabel(address);
+      scored.score = "green";
+      scored.scoreValue = 0;
+      scored.signals = [
+        { id: "trusted_allowlist", label: `Trusted ecosystem wallet (${label})`, severity: "low" as const },
+        ...(Array.isArray(scored.signals) ? scored.signals : []),
+      ];
+      scored.summary = "Trusted ecosystem wallet (allowlist).";
+    }
     return NextResponse.json(
-      { status: "ok", ...scored, raw: { hasAccount: !!accountInfo, txCount: txs.length } },
+      {
+        status: "ok",
+        ...scored,
+        raw: {
+          ...(typeof accountInfo !== "undefined" ? { hasAccount: !!accountInfo } : {}),
+          txCount: txs.length,
+          triedEndpoints: getRpcEndpoints(),
+          trusted: isTrustedWallet(address) ? trustedLabel(address) : null
+        }
+      },
       { status: 200 }
     );
   } catch (err: any) {

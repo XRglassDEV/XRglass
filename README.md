@@ -48,6 +48,8 @@ npm install
 
 ini
 XRPL_WSS=wss://xrplcluster.com
+# Optional: allowlist trusted wallets (address|label)
+XRGLASS_TRUSTED_WALLETS=rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh|Ripple (donation),rHLEki8gPUMnF72JYdUuD3aKcsfScYz6t|XRPL Labs
 
 4. Run the dev server:
 
