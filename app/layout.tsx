@@ -1,31 +1,37 @@
-// app/layout.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import "./globals.css";
-import Header from "./header";
-import { Providers } from "./providers";
+import Link from "next/link";
+import { BUILD_TAG } from "./_internal/build";
 
-export const metadata = {
-  title: "XRglass — XRP Wallet & Project Verifier",
-  description:
-    "Verify XRP wallets and crypto projects instantly. Avoid scams and rug pulls with transparent trust checks.",
-};
+export const metadata = { title: "XRglass", description: "See through the XRPL" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
-        {/* Background */}
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,rgba(23,162,184,0.15),transparent_45%),radial-gradient(ellipse_at_bottom,rgba(16,185,129,0.08),transparent_40%)]" />
-        <div className="pointer-events-none fixed inset-0" /> {/* temp: avoid custom bg-grid class while debugging */}
-
-        <Providers>
-          <Header />
-          <main className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-6">
-            {children}
-          </main>
-        </Providers>
+    <html lang="en" data-build={BUILD_TAG}>
+      <body>
+        <header className="sticky top-0 z-20 bg-white/60 backdrop-blur-md border-b border-white/60">
+          <div className="max-w-7xl mx-auto px-5 py-3 flex items-center gap-6">
+            <Link href="/" className="text-2xl font-extrabold" style={{color:"#0A79C8"}}>
+              XR<span className="text-[#0B96E5]">glass</span>
+            </Link>
+            <div className="hidden md:flex flex-1">
+              <div className="glass w-full px-4 py-2">
+                <input className="w-full bg-transparent outline-none text-sm" placeholder="Search Wallet/Project" />
+              </div>
+            </div>
+            <nav className="hidden sm:flex items-center gap-4 text-sm">
+              <Link href="/dashboard">Home</Link>
+              <Link href="/watchlist">Watchlist</Link>
+              <Link href="/marketplace">Reports</Link>
+              <Link href="/version" className="text-xs opacity-70">v</Link>
+            </nav>
+            <span className="pill" style={{background:"linear-gradient(180deg,#0A79C8,#0663A3)",color:"#fff"}}>XRglass Pro</span>
+          </div>
+        </header>
+        <main className="max-w-7xl mx-auto px-5 py-8">{children}</main>
+        <footer className="max-w-7xl mx-auto px-5 py-8 text-sm text-gray-500">© XRglass 2025 – Ripple Ecosystem</footer>
       </body>
     </html>
   );
