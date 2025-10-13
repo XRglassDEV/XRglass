@@ -17,3 +17,4 @@ out
 *.tar
 
 /lib/generated/prisma
+.vercel
