@@ -1,3 +1,4 @@
+import Watchlist from "@/components/watchlist/Watchlist";
 import { Suspense } from "react";
 
 export default function DashboardPage() {
@@ -5,6 +6,10 @@ export default function DashboardPage() {
     <main className="container py-10">
       <h1 className="text-3xl font-bold">XRglass Dashboard</h1>
       <p className="mt-2 text-neutral-400">Watchlists, alerts & last verdicts.</p>
+
+      <div className="mt-8">
+        <Watchlist />
+      </div>
 
       <div className="grid md:grid-cols-3 gap-6 mt-8">
         <div className="card p-6">
