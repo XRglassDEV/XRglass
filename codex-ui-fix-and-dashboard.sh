@@ -203,8 +203,6 @@ fi
 npm pkg get dependencies.tailwindcss >/dev/null 2>&1 || npm i -D tailwindcss postcss autoprefixer tailwind-merge clsx
 
 # 11) Typecheck & build
-export NEXT_SWC_CACHE_DIR="${NEXT_SWC_CACHE_DIR:-$(pwd)/.next-swc-cache}"
-mkdir -p "$NEXT_SWC_CACHE_DIR"
 npm run typecheck || true
 npm run build
 
