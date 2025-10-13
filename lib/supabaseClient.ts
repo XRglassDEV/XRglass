@@ -1,7 +1,11 @@
 // lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = 'https://axiucsclctzsulquevug.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aXVjc2NsY3R6c3VscXVldnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NTk2NjQsImV4cCI6MjA3NTMzNTY2NH0.POreUHWnZnGNMBtlb8y23YuyY-SjGWZR0CUHMeF33X4'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Supabase environment variables are not configured");
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

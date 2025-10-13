@@ -6,7 +6,7 @@ export const RPC_NODES: RpcNode[] = [
   { url: "https://xrplcluster.com/",      name: "XRPL Cluster (HTTP)" }
 ];
 
-async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<unknown> {
+async function postJSON(url: string, body: unknown, timeoutMs = 8000): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -29,7 +29,7 @@ export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
   for (const node of RPC_NODES) {
     const start = performance.now();
     try {
-      const json = await postJSON(node.url, makeBody());
+      const json: any = await postJSON(node.url, makeBody());
       const latency = Math.round(performance.now() - start);
       if (json?.result || json?.status === "success") {
         return { data: (json.result ?? json), node, latency };
@@ -42,6 +42,6 @@ export async function rpcWithFallback<T = unknown>(makeBody: () => unknown):
 }
 
 export async function rpcCall<T = unknown>(node: RpcNode, body: unknown, timeoutMs = 8000): Promise<T> {
-  const json = await postJSON(node.url, body, timeoutMs);
+  const json: any = await postJSON(node.url, body, timeoutMs);
   return (json?.result ?? json) as T;
 }
