@@ -2,16 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* XRglass design tokens */
+:root {
+  --xr-blue: #0a79c8;
+  --xr-blue-2: #0b96e5;
+  --xr-bg: #e9f4ff;
+  --xr-surface: 255, 255, 255;
+}
+
 /* Let the browser know both light/dark are supported */
 html {
   color-scheme: light dark;
 }
 
+html,
+body {
+  background: var(--xr-bg);
+  color: #1f2937;
+}
+
 /* Subtle grid background utility */
 .bg-grid-slate {
   background-image:
-    linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px);
+    linear-gradient(to right, rgba(148, 163, 184, 0.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.15) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -30,19 +44,108 @@ html {
   @apply transition-colors duration-300;
 }
 
+/* Glassmorphism utilities shared across dashboard */
+.glass {
+  background: rgba(var(--xr-surface), 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(10, 121, 200, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.h-title {
+  font-weight: 800;
+  color: var(--xr-blue);
+  letter-spacing: 0.2px;
+}
+
+.subtle {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  font-weight: 700;
+}
+
+.btn-blue {
+  background: linear-gradient(180deg, var(--xr-blue), #0663a3);
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(10, 121, 200, 0.26);
+}
+
+.btn-blue:disabled {
+  opacity: 0.55;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+}
+
+@media (min-width: 1024px) {
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 24px;
+    position: relative;
+  }
+
+  .grid-2::after {
+    content: "";
+    position: absolute;
+    left: calc(100% - 420px - 12px);
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(10, 121, 200, 0.1);
+  }
+}
+
 /* === XRglass: glowing CTA button === */
 @keyframes glowPulse {
-  0%, 100% { opacity: .65; transform: scale(1); filter: blur(18px); }
-  50%      { opacity: 1;    transform: scale(1.04); filter: blur(22px); }
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(1);
+    filter: blur(18px);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: blur(22px);
+  }
 }
 
 @layer utilities {
   .btn-glow {
     position: relative;
     isolation: isolate; /* keep glow behind label */
-    transition: transform .15s ease, background-color .15s ease;
+    transition: transform 0.15s ease, background-color 0.15s ease;
   }
-  .btn-glow:active { transform: translateY(1px) scale(.99); }
+
+  .btn-glow:active {
+    transform: translateY(1px) scale(0.99);
+  }
 
   .btn-glow::before {
     content: "";
@@ -51,21 +154,35 @@ html {
     z-index: -1;
     border-radius: inherit;
     background:
-      radial-gradient(120% 120% at 50% 20%, rgba(34,211,238,.55), transparent 60%),
-      radial-gradient(120% 120% at 20% 120%, rgba(16,185,129,.45), transparent 55%);
-    opacity: .65;
+      radial-gradient(120% 120% at 50% 20%, rgba(34, 211, 238, 0.55), transparent 60%),
+      radial-gradient(120% 120% at 20% 120%, rgba(16, 185, 129, 0.45), transparent 55%);
+    opacity: 0.65;
     filter: blur(18px);
-    transition: opacity .2s ease, filter .2s ease, transform .2s ease;
+    transition: opacity 0.2s ease, filter 0.2s ease, transform 0.2s ease;
     pointer-events: none;
   }
 
-  .btn-glow:hover::before { opacity: .95; filter: blur(22px); }
-  .btn-glow:disabled::before { opacity: .25; }
+  .btn-glow:hover::before {
+    opacity: 0.95;
+    filter: blur(22px);
+  }
 
-  .btn-glow--pulse::before { animation: glowPulse 3.2s ease-in-out infinite; }
-  .btn-glow:disabled.btn-glow--pulse::before { animation-duration: 5s; opacity: .2; }
+  .btn-glow:disabled::before {
+    opacity: 0.25;
+  }
+
+  .btn-glow--pulse::before {
+    animation: glowPulse 3.2s ease-in-out infinite;
+  }
+
+  .btn-glow:disabled.btn-glow--pulse::before {
+    animation-duration: 5s;
+    opacity: 0.2;
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .btn-glow--pulse::before { animation: none; }
+    .btn-glow--pulse::before {
+      animation: none;
+    }
   }
 }
