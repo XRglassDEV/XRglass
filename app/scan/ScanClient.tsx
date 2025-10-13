@@ -5,8 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ResultCard from "@/components/ResultCard";
 import ProjectCard from "@/components/ProjectCard";
-
-type ApiResult = any;
+import type { ApiResult } from "@/types/results";
 
 export default function ScanClient() {
   const params = useSearchParams();
@@ -55,7 +54,19 @@ export default function ScanClient() {
       )}
 
       {/* Render by type */}
-      {result && type === "wallet" && <ResultCard result={result} />}
+      {result?.status === "ok" && type === "wallet" && (
+        <ResultCard result={result} />
+      )}
+
+      {result?.status === "error" && type === "wallet" && (
+        <div className="rounded-2xl border border-rose-500/60 bg-rose-500/10 p-4 text-sm shadow-sm">
+          <div className="mb-1 font-semibold text-rose-500">Wallet scan failed</div>
+          <div className="text-rose-200/90">
+            {result.message || "We couldn’t complete the wallet check."}
+          </div>
+        </div>
+      )}
+
       {result && type === "project" && <ProjectCard result={result} />}
     </>
   );
