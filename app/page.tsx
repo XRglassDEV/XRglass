@@ -152,12 +152,12 @@ export default function Home() {
   }
 
   return (
-    <main>
+    <main className="space-y-10">
       <section className="rounded-3xl border border-slate-800/60 bg-slate-900/60 backdrop-blur-sm p-6 md:p-8 shadow-lg">
         {/* Hero */}
         <h1 className="text-center text-3xl md:text-4xl font-extrabold tracking-tight">
           <span className="text-white">XRglass — </span>
-          <span className="text-gradient">scan XRP wallets & projects</span>
+          <span className="text-gradient">scan XRP wallets scan XRP wallets & projects projects</span>
         </h1>
         <p className="mt-2 text-center text-sm text-slate-400">
           Paste a wallet or website. We’ll check common risk signals and show a

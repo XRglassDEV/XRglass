@@ -2,12 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Let the browser know both light/dark are supported */
-html {
-  color-scheme: light dark;
+:root {
+  color-scheme: light;
+  --bg: 214 100% 98%;
+  --panel: 0 0% 100%;
+  --text: 210 35% 13%;
+  --muted: 210 15% 40%;
+  --ring: 199 89% 58%;
+  --card-ring: 199 100% 88%;
+  --shadow: 210 20% 10%;
+  --radius: 16px;
 }
 
-/* Subtle grid background utility */
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply antialiased text-slate-800;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, hsl(199 100% 92%) 0%, transparent 60%),
+    radial-gradient(1200px 600px at 90% -10%, hsl(200 100% 95%) 0%, transparent 60%),
+    hsl(var(--bg));
+}
+
+a {
+  @apply underline-offset-4 transition-colors hover:text-sky-600;
+}
+
+.container {
+  @apply mx-auto max-w-7xl px-4;
+}
+
+.card {
+  @apply rounded-2xl border border-sky-100 bg-white/70 backdrop-blur shadow-[0_10px_30px_-12px_rgba(10,42,59,0.2)];
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium bg-sky-500 text-white hover:bg-sky-400 active:scale-[.99] transition;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-sky-100 text-sky-700;
+}
+
+h1,
+h2,
+h3 {
+  @apply tracking-tight text-slate-900;
+}
+
+/* --- Legacy utilities kept for compatibility --- */
 .bg-grid-slate {
   background-image:
     linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px),
@@ -15,7 +61,6 @@ html {
   background-size: 24px 24px;
 }
 
-/* Gradient text utility */
 .text-gradient {
   background: linear-gradient(to right, #38bdf8, #22d3ee, #34d399);
   -webkit-background-clip: text;
@@ -23,26 +68,35 @@ html {
   color: transparent;
 }
 
-/* Card base utility */
 .card-base {
-  @apply rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm;
-  @apply bg-white dark:bg-slate-900/40;
-  @apply transition-colors duration-300;
+  @apply rounded-2xl border border-sky-100 bg-white/70 shadow-sm transition-colors duration-300;
 }
 
 /* === XRglass: glowing CTA button === */
 @keyframes glowPulse {
-  0%, 100% { opacity: .65; transform: scale(1); filter: blur(18px); }
-  50%      { opacity: 1;    transform: scale(1.04); filter: blur(22px); }
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(1);
+    filter: blur(18px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: blur(22px);
+  }
 }
 
 @layer utilities {
   .btn-glow {
     position: relative;
-    isolation: isolate; /* keep glow behind label */
-    transition: transform .15s ease, background-color .15s ease;
+    isolation: isolate;
+    transition: transform 0.15s ease, background-color 0.15s ease;
   }
-  .btn-glow:active { transform: translateY(1px) scale(.99); }
+
+  .btn-glow:active {
+    transform: translateY(1px) scale(0.99);
+  }
 
   .btn-glow::before {
     content: "";
@@ -51,21 +105,35 @@ html {
     z-index: -1;
     border-radius: inherit;
     background:
-      radial-gradient(120% 120% at 50% 20%, rgba(34,211,238,.55), transparent 60%),
-      radial-gradient(120% 120% at 20% 120%, rgba(16,185,129,.45), transparent 55%);
-    opacity: .65;
+      radial-gradient(120% 120% at 50% 20%, rgba(34, 211, 238, 0.55), transparent 60%),
+      radial-gradient(120% 120% at 20% 120%, rgba(16, 185, 129, 0.45), transparent 55%);
+    opacity: 0.65;
     filter: blur(18px);
-    transition: opacity .2s ease, filter .2s ease, transform .2s ease;
+    transition: opacity 0.2s ease, filter 0.2s ease, transform 0.2s ease;
     pointer-events: none;
   }
 
-  .btn-glow:hover::before { opacity: .95; filter: blur(22px); }
-  .btn-glow:disabled::before { opacity: .25; }
+  .btn-glow:hover::before {
+    opacity: 0.95;
+    filter: blur(22px);
+  }
 
-  .btn-glow--pulse::before { animation: glowPulse 3.2s ease-in-out infinite; }
-  .btn-glow:disabled.btn-glow--pulse::before { animation-duration: 5s; opacity: .2; }
+  .btn-glow:disabled::before {
+    opacity: 0.25;
+  }
+
+  .btn-glow--pulse::before {
+    animation: glowPulse 3.2s ease-in-out infinite;
+  }
+
+  .btn-glow:disabled.btn-glow--pulse::before {
+    animation-duration: 5s;
+    opacity: 0.2;
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .btn-glow--pulse::before { animation: none; }
+    .btn-glow--pulse::before {
+      animation: none;
+    }
   }
 }

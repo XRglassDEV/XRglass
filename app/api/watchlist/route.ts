@@ -7,7 +7,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const url = process.env.WEBHOOK_URL;
+    const override = typeof body?.webhook === "string" ? body.webhook.trim() : undefined;
+    const itemHook = typeof body?.item?.webhook === "string" ? body.item.webhook.trim() : undefined;
+    const candidate = override || itemHook;
+    const isValidHook = (url?: string) => !!url && /^https?:\/\//i.test(url);
+    const url = isValidHook(candidate) ? candidate : process.env.WEBHOOK_URL;
     if (!url) {
       return new Response(JSON.stringify({ ok: false, error: "WEBHOOK_URL not set" }), { status: 400, headers: { "content-type": "application/json" }});
     }
