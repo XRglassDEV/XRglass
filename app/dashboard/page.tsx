@@ -1,44 +1,33 @@
-import Watchlist from "@/components/watchlist/Watchlist";
-import { Suspense } from "react";
+import { supabaseServer } from '@/lib/supabaseServer';
 
-export default function DashboardPage() {
+export default async function Dashboard() {
+  const sb = supabaseServer();
+  const { data: { user } } = await sb.auth.getUser();
+
+  if (!user) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-16">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <p className="mt-2 text-slate-600">Please sign in to access XRglass Pro.</p>
+      </div>
+    );
+  }
+
   return (
-    <main className="space-y-10">
-      <section className="space-y-2">
-        <h1 className="text-3xl font-bold">XRglass Dashboard</h1>
-        <p className="text-slate-600">Watchlists, alerts & live verdicts.</p>
-      </section>
+    <div className="max-w-7xl mx-auto px-6 py-16">
+      <h1 className="text-3xl font-bold">Welcome, {user.email}</h1>
+      <p className="mt-2 text-slate-600">Your scans, watchlists and add-ons appear here.</p>
 
-      <Watchlist />
-
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="card p-6 space-y-3">
-          <h2 className="text-xl font-semibold">Latest scans</h2>
-          <p className="text-slate-600">
-            Aggregate view of wallets and projects scanned over the last 24 hours.
-          </p>
-          <p className="text-sm text-slate-500">Connect XRglass Pro to unlock detailed analytics.</p>
+      <div className="mt-8 grid gap-6 sm:grid-cols-2">
+        <div className="p-6 rounded-2xl border border-white/60 bg-white/60 backdrop-blur">
+          <div className="font-semibold">Recent Scans</div>
+          <div className="text-sm text-slate-600 mt-2">No scans yet.</div>
         </div>
-        <div className="card p-6 space-y-3">
-          <h2 className="text-xl font-semibold">Risk signals</h2>
-          <p className="text-slate-600">Keep an eye on anomaly flags, heuristics and scoring deltas.</p>
-          <p className="text-sm text-slate-500">Alert rules are configurable per item in your watchlist.</p>
-        </div>
-        <div className="card p-6 space-y-3">
-          <h2 className="text-xl font-semibold">Integrations</h2>
-          <p className="text-slate-600">Forward verdicts to Slack, Discord or custom webhooks.</p>
-          <p className="text-sm text-slate-500">Set <code>WEBHOOK_URL</code> or per-item overrides to deliver alerts.</p>
+        <div className="p-6 rounded-2xl border border-white/60 bg-white/60 backdrop-blur">
+          <div className="font-semibold">Watchlist</div>
+          <div className="text-sm text-slate-600 mt-2">Add wallets to monitor.</div>
         </div>
       </div>
-
-      <Suspense>
-        <section className="card p-6 space-y-2">
-          <h3 className="text-lg font-semibold">Webhook (optional)</h3>
-          <p className="text-slate-600">
-            Configure a webhook endpoint to fan out notifications from your watchlist.
-          </p>
-        </section>
-      </Suspense>
-    </main>
+    </div>
   );
 }
