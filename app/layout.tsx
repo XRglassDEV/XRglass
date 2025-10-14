@@ -1,27 +1,44 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import Header from "@/components/Header";
-import { Providers } from "./providers";
+import './globals.css';
+import type { ReactNode } from 'react';
+import Link from 'next/link';
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-export const metadata: Metadata = {
-  title: "XRglass — XRP Wallet & Project Verifier",
-  description:
-    "Verify XRP wallets and crypto projects instantly. Avoid scams and rug pulls with transparent trust checks.",
+export const metadata = {
+  title: 'XRglass — Cinematic XRPL Trust',
+  description: 'AI narratives, behavioural analytics, and programmable automations.'
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen text-slate-800 antialiased">
-        <Providers>
-          <Header />
-          <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
-            {children}
-          </main>
-        </Providers>
+    <html lang="en">
+      <body className="min-h-screen">
+        {/* Header */}
+        <header className="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-white/5 border-b border-white/10">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+            <Link href="/" className="text-white font-semibold">XRglass</Link>
+            <nav className="hidden md:flex items-center gap-6 text-sm text-white/70">
+              <Link href="/">Home</Link>
+              <Link href="/marketplace">Marketplace</Link>
+              <Link href="/pricing">Pricing</Link>
+              <Link href="/dashboard" className="btn-premium">XRglass Pro</Link>
+            </nav>
+            <button className="md:hidden text-white/80">☰</button>
+          </div>
+        </header>
+
+        {/* Page container */}
+        <main className="mx-auto max-w-7xl px-6 py-14">{children}</main>
+
+        {/* Footer */}
+        <footer className="border-t border-white/10">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-10 text-sm text-white/50">
+            <div>© {new Date().getFullYear()} XRglass</div>
+            <div className="flex gap-4">
+              <Link href="#">Terms</Link>
+              <Link href="#">Privacy</Link>
+              <Link href="#">Contact</Link>
+            </div>
+          </div>
+        </footer>
       </body>
     </html>
   );
