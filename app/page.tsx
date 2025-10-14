@@ -107,6 +107,9 @@ const partnerHighlights = ["XRPL Foundation", "Gatehub", "Coil", "Uphold", "OnXR
 export default function HomePage() {
   return (
     <div className="space-y-28">
+      {/* 🔥 FREE SCANNER (TOP OF HOMEPAGE) */}
+      <Scanner />
+
       {/* HERO */}
       <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-white/5 px-6 pb-16 pt-24 shadow-[0_28px_80px_rgba(10,18,40,0.5)] sm:px-12 lg:px-16">
         <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-white/30 to-transparent" aria-hidden />
@@ -150,9 +153,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* 🔥 FREE SCANNER (for everyone) */}
-      <Scanner />
 
       {/* PLATFORM */}
       <section id="platform" className="space-y-12">
