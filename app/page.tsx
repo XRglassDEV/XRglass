@@ -1,319 +1,467 @@
 // app/page.tsx
-"use client";
+import Link from "next/link";
 
-import { useEffect, useMemo, useState } from "react";
-import ResultCard from "@/components/ResultCard";
-import LoadingScan from "@/components/LoadingScan";
-import TrustStats from "@/components/TrustStats";
-import StatusBadge from "@/components/StatusBadge";
-import WatchlistSection from "@/components/watchlist/WatchlistSection";
-import type { ApiResult } from "@/types/results";
-import type { Verdict } from "@/types/api";
+const heroStats = [
+  { label: "wallets verified", value: "2.4M+" },
+  { label: "alerts processed", value: "54B" },
+  { label: "global uptime", value: "99.998%" },
+];
 
-/* Helpers */
-function isWalletAddress(s: string): boolean {
-  return /^r[1-9A-HJ-NP-Za-km-z]{25,35}$/.test(s.trim());
-}
-function looksLikeDomain(s: string): boolean {
-  const clean = s.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-  return !!clean && clean.includes(".") && !/\s/.test(clean);
-}
-function shorten(s: string, n = 14) {
-  return s.length > n ? s.slice(0, n) + "…" : s;
-}
+const platformPillars = [
+  {
+    title: "Prism Trust Graph",
+    description:
+      "Cluster XRPL wallets with live heuristics, sanction screening, and provenance tracing. Visualise ownership and counterparties instantly.",
+    highlight: "11M+ labelled relationships",
+  },
+  {
+    title: "Sentinel Automations",
+    description:
+      "Compose real-time policies from high-signal triggers. Route to Slack, Telegram, SIEM, or custom webhooks without code.",
+    highlight: "70+ programmable actions",
+  },
+  {
+    title: "Aurora Risk Studio",
+    description:
+      "Layer AI narratives, anomaly explanations, and compliance-grade exports. Designed for boards, regulators, and elite partners.",
+    highlight: "GDPR & SOC2 aligned",
+  },
+];
 
-/* Recent scans */
-type RecentItem = {
-  q: string;
-  type: "wallet" | "project";
-  verdict?: Verdict | null;
-  ts: number;
-};
-const RECENT_KEY = "xrpulse_recent_scans";
+const capabilityCards = [
+  {
+    eyebrow: "Real-time Intelligence",
+    title: "Decode every XRPL wallet in milliseconds",
+    copy:
+      "XRglass ingests on-chain, sanction, darknet, and behavioural intelligence into a single cinematic profile. Align your risk desk, compliance, and investigations in one lens.",
+    bullets: [
+      "Live reputation scoring with contextual confidence",
+      "Path tracing for 30 hops with automated anomaly notes",
+      "Persona stitching across custodial exchange, DeFi, and NFT activity",
+    ],
+  },
+  {
+    eyebrow: "Automation",
+    title: "Design precision guardrails that run themselves",
+    copy:
+      "Build workflows that combine deterministic checks with AI heuristics. Approvals, escalations, and audit trails ship out-of-the-box.",
+    bullets: [
+      "Policy composer with role-based controls",
+      "Native Slack, Teams, and PagerDuty bridges",
+      "Immutable evidence vault with exportable attestations",
+    ],
+  },
+  {
+    eyebrow: "Enterprise trust",
+    title: "Premium security posture, globally replicated",
+    copy:
+      "Hardened infrastructure with multi-region presence, private networking, and on-premise deployment options to satisfy the most demanding regulators.",
+    bullets: [
+      "EU and US data residency with dedicated clusters",
+      "Hardware-backed key isolation and zero-trust access",
+      "Quarterly third-party audits with shared reports",
+    ],
+  },
+];
 
-export default function Home() {
-  const [input, setInput] = useState("");
-  const [mode, setMode] = useState<"auto" | "wallet" | "project">("auto");
-  const [result, setResult] = useState<ApiResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
-  const [qParam, setQParam] = useState<string>(""); // ✅ safe ?q= for SSR
+const workflowStages = [
+  {
+    title: "Sense",
+    description:
+      "Continuous monitoring across XRPL, DEX, NFT, sanction, and behavioural feeds.",
+    time: "sub-second ingest",
+  },
+  {
+    title: "Interpret",
+    description:
+      "AI narratives and heuristics summarise risk posture for every wallet and project.",
+    time: "<120ms inference",
+  },
+  {
+    title: "Decide",
+    description:
+      "Policy automations escalate to the right teams with approval routing and evidence.",
+    time: "0 manual triage",
+  },
+  {
+    title: "Assure",
+    description:
+      "Export branded attestations and compliance packets for partners and regulators.",
+    time: "one-click",
+  },
+];
 
-  // load recents
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(RECENT_KEY);
-      if (raw) setRecent(JSON.parse(raw));
-    } catch {}
-  }, []);
+const testimonials = [
+  {
+    quote:
+      "XRglass became our mission control for XRPL trust overnight. The cinematic narratives mean every stakeholder speaks the same language.",
+    author: "Elena Marques",
+    role: "Chief Risk Officer, RippleWave",
+  },
+  {
+    quote:
+      "Their Sentinel automations cleared 68% of manual reviews in month one. We now orchestrate escalations directly into ServiceNow.",
+    author: "Noah Park",
+    role: "Head of Compliance, HorizonX",
+  },
+  {
+    quote:
+      "Aurora Studio delivers board-ready reporting in minutes. It’s the premium standard for regulated XRPL institutions.",
+    author: "Sofia Laurent",
+    role: "Managing Partner, Meridian Capital",
+  },
+];
 
-  // read ?q= and auto-scan
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(window.location.search);
-    const q = sp.get("q") || "";
-    setQParam(q); // ✅ safe state, used later
-    if (q) {
-      setInput(q);
-      setTimeout(() => handleScan(q), 0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+const partnerHighlights = [
+  "XRPL Foundation",
+  "Gatehub",
+  "Coil",
+  "Uphold",
+  "OnXRP",
+  "Bitstamp",
+];
 
-  const detectedType = useMemo<"wallet" | "project" | null>(() => {
-    if (isWalletAddress(input)) return "wallet";
-    if (looksLikeDomain(input)) return "project";
-    return null;
-  }, [input]);
+const faqItems = [
+  {
+    question: "How quickly can my team onboard?",
+    answer:
+      "Most premium partners deploy within 10 days. Our concierge engineers configure data residency, SSO, and policy automations alongside your teams.",
+  },
+  {
+    question: "Can XRglass integrate with our existing stack?",
+    answer:
+      "Yes. Use native bridges for Slack, Teams, PagerDuty, ServiceNow, and Splunk. Custom webhook and API connectors are supported out-of-the-box.",
+  },
+  {
+    question: "Where is data hosted?",
+    answer:
+      "Pick EU or US data residency with optional dedicated clusters. Air-gapped and on-premise deployments are available for sovereign institutions.",
+  },
+  {
+    question: "Do you offer white-glove support?",
+    answer:
+      "Every premium customer receives 24/7 encrypted chat, quarterly executive reviews, and direct access to our trust science team.",
+  },
+];
 
-  const effectiveType: "wallet" | "project" | null = useMemo(() => {
-    if (mode === "wallet") return "wallet";
-    if (mode === "project") return "project";
-    return detectedType;
-  }, [mode, detectedType]);
-
-  async function handleScan(forced?: string) {
-    const q = (forced ?? input).trim();
-    if (!q) return;
-
-    const kind: "wallet" | "project" =
-      mode === "wallet"
-        ? "wallet"
-        : mode === "project"
-        ? "project"
-        : isWalletAddress(q)
-        ? "wallet"
-        : "project";
-
-    setLoading(true);
-    setResult(null);
-
-    const url =
-      kind === "wallet"
-        ? `/api/check?address=${encodeURIComponent(q)}`
-        : `/api/project?domain=${encodeURIComponent(q)}`;
-
-    try {
-      const res = await fetch(url);
-      const data = (await res.json()) as ApiResult;
-
-      // keep full union for the UI below
-      setResult(data);
-
-      // log only if ok
-      const verdictForLog = data.status === "ok" ? data.verdict : "unknown";
-      const scoreForLog = data.status === "ok" ? data.details?.score ?? null : null;
-      const detailsForLog = data.status === "ok" ? data.details ?? {} : {};
-
-      await fetch("/api/log-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: q,
-          type: kind,
-          verdict: verdictForLog,
-          score: scoreForLog,
-          details: detailsForLog,
-        }),
-      });
-
-      // update shareable ?q=
-      if (typeof window !== "undefined") {
-        const sp = new URLSearchParams(window.location.search);
-        sp.set("q", q);
-        window.history.replaceState(null, "", `?${sp.toString()}`);
-        setQParam(q); // keep in state for TrustStats
-      }
-
-      // save to recents
-      const item: RecentItem = {
-        q,
-        type: kind,
-        verdict: data.status === "ok" ? data.verdict : null,
-        ts: Date.now(),
-      };
-      setRecent((prev) => {
-        const withoutDup = prev.filter((r) => r.q !== q);
-        const next = [item, ...withoutDup].slice(0, 8);
-        try {
-          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-    } catch (e) {
-      console.error(e);
-      setResult({
-        status: "error",
-        message: "We couldn’t reach the trust service. Please try again.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
+export default function HomePage() {
   return (
-    <main className="space-y-10">
-      <section className="rounded-3xl border border-slate-800/60 bg-slate-900/60 backdrop-blur-sm p-6 md:p-8 shadow-lg">
-        {/* Hero */}
-        <h1 className="text-center text-3xl md:text-4xl font-extrabold tracking-tight">
-          <span className="text-white">XRglass — </span>
-          <span className="text-gradient">scan XRP wallets scan XRP wallets & projects projects</span>
-        </h1>
-        <p className="mt-2 text-center text-sm text-slate-400">
-          Paste a wallet or website. We’ll check common risk signals and show a
-          simple verdict you can trust.
-        </p>
-
-        {/* Mode toggle */}
-        <div className="mt-5 mb-3 flex justify-center">
-          <div className="inline-flex rounded-2xl bg-slate-800 p-1">
-            {(["auto", "wallet", "project"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`px-3 py-1.5 text-sm rounded-xl transition ${
-                  mode === m
-                    ? "bg-slate-900 shadow text-white"
-                    : "text-slate-300 opacity-80"
-                }`}
+    <div className="space-y-28">
+      {/* HERO */}
+      <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-white/5 px-6 pb-16 pt-24 shadow-[0_28px_80px_rgba(10,18,40,0.5)] sm:px-12 lg:px-16">
+        <div
+          className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-white/30 to-transparent"
+          aria-hidden
+        />
+        <div
+          className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent"
+          aria-hidden
+        />
+        <div className="grid gap-12 lg:grid-cols-[1.35fr_1fr] lg:items-end">
+          <div className="space-y-8">
+            <span className="tag-pill">ultra-premium xrpl trust</span>
+            <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Cinematic intelligence for elite XRPL operators
+            </h1>
+            <p className="max-w-2xl text-balance text-base text-white/70 sm:text-lg">
+              XRglass fuses AI narratives, behavioural analytics, and
+              programmable automations into a single pane. See risk, orchestrate
+              responses, and deliver regulator-grade evidence in minutes.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <Link href="/pro" className="btn-premium">
+                Request private preview
+              </Link>
+              <Link
+                href="#platform"
+                className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm text-white/70 transition hover:border-white/40 hover:text-white"
               >
-                {m === "auto" ? "Auto" : m === "wallet" ? "Wallet" : "Project"}
-              </button>
+                Explore platform
+                <span aria-hidden>↗</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Hero right card */}
+          <div className="glass-panel--soft relative overflow-hidden px-6 py-8 sm:px-8">
+            <div
+              className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.22),transparent_65%)]"
+              aria-hidden
+            />
+            <div className="relative space-y-8">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/50">
+                  live signal stream
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-white">
+                  VaultGuard AI
+                </p>
+                <p className="mt-2 text-sm text-white/60">
+                  Predictive heuristics surface behavioural anomalies before
+                  funds move. Tailored to your risk thresholds.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {heroStats.map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center"
+                  >
+                    <p className="text-2xl font-semibold text-gradient">
+                      {stat.value}
+                    </p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.35em] text-white/50">
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs uppercase tracking-[0.35em] text-white/40">
+                enterprise ready · soc2 · gdpr · iso 27001
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PLATFORM */}
+      <section id="platform" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">platform layers</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Three pillars that reimagine trust operations
+          </h2>
+          <p className="mx-auto max-w-2xl text-balance text-sm text-white/60 sm:text-base">
+            Every layer is co-designed with exchanges, institutions, and
+            regulators to deliver uncompromising clarity across the XRPL.
+          </p>
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {platformPillars.map((pillar) => (
+            <div
+              key={pillar.title}
+              className="glass-panel--soft shadow-ring flex h-full flex-col gap-6 p-6"
+            >
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.4em] text-white/60">
+                {pillar.highlight}
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-white">
+                  {pillar.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-white/60">
+                  {pillar.description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* CAPABILITIES */}
+      <section id="capabilities" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">capabilities</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Designed for teams who cannot compromise on clarity
+          </h2>
+          <p className="mx-auto max-w-2xl text-balance text-sm text-white/60 sm:text-base">
+            From compliance to investigations, XRglass aligns every stakeholder
+            with a single version of truth.
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          {capabilityCards.map((card) => (
+            <div
+              key={card.title}
+              className="glass-panel--soft shadow-ring grid gap-6 px-6 py-10 md:grid-cols-[1.2fr_1fr] md:items-center md:px-10"
+            >
+              <div className="space-y-5">
+                <span className="text-xs font-semibold uppercase tracking-[0.4em] text-sky-200/80">
+                  {card.eyebrow}
+                </span>
+                <h3 className="text-2xl font-semibold text-white sm:text-3xl">
+                  {card.title}
+                </h3>
+                <p className="text-sm text-white/60 sm:text-base">{card.copy}</p>
+              </div>
+              <ul className="space-y-4 text-sm text-white/70">
+                {card.bullets.map((item) => (
+                  <li key={item} className="flex items-start gap-3">
+                    <span
+                      className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-gradient-to-br from-sky-400 to-violet-500"
+                      aria-hidden
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* WORKFLOW */}
+      <section id="workflow" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">workflow</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            A cinematic loop from signal to assurance
+          </h2>
+        </div>
+        <div className="glass-panel overflow-hidden px-6 py-12 sm:px-10">
+          <div className="grid gap-10 md:grid-cols-4">
+            {workflowStages.map((stage, index) => (
+              <div key={stage.title} className="space-y-5">
+                <div className="flex items-center gap-3 text-xs uppercase tracking-[0.4em] text-white/60">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-sm text-white/80">
+                    0{index + 1}
+                  </span>
+                  {stage.time}
+                </div>
+                <h3 className="text-lg font-semibold text-white">{stage.title}</h3>
+                <p className="text-sm leading-relaxed text-white/60">
+                  {stage.description}
+                </p>
+              </div>
             ))}
           </div>
         </div>
-
-        {/* Input */}
-        <div className="flex justify-center gap-3">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleScan()}
-            placeholder={
-              effectiveType === "wallet"
-                ? "Wallet address (starts with r...)"
-                : effectiveType === "project"
-                ? "Project website (example.com)"
-                : "Paste wallet address (r...) or website (example.com)"
-            }
-            className="w-[22rem] rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-cyan-400 focus:shadow-[0_0_0_4px_rgba(34,211,238,0.08)]"
-          />
-          <button
-            onClick={() => handleScan()}
-            disabled={loading || !effectiveType}
-            aria-busy={loading ? "true" : "false"}
-            title={
-              !effectiveType
-                ? "Paste a wallet or website first"
-                : "Run trust scan"
-            }
-            className={`btn-glow btn-glow--pulse rounded-xl px-6 py-3 font-semibold
-                        text-slate-900 bg-cyan-500 shadow
-                        hover:bg-cyan-400 focus:outline-none
-                        focus-visible:ring-2 focus-visible:ring-cyan-300
-                        disabled:opacity-60 disabled:cursor-not-allowed`}
-          >
-            {loading ? "Verifying…" : "Start Scan"}
-          </button>
-        </div>
-
-        {/* Helper line */}
-        <div className="mt-2 text-center text-xs text-slate-400">
-          {effectiveType === "wallet" && "Detected: Wallet address"}
-          {effectiveType === "project" && "Detected: Project / Website"}
-          {!effectiveType &&
-            input &&
-            "Tip: paste a wallet (r...) or a website like example.com"}
-        </div>
-
-        {/* Recent */}
-        {recent.length > 0 && (
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
-              <span>Recent checks</span>
-              <button
-                onClick={() => {
-                  localStorage.removeItem(RECENT_KEY);
-                  setRecent([]);
-                }}
-                className="text-cyan-300 hover:underline"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {recent.map((r) => (
-                <button
-                  key={`${r.q}-${r.ts}`}
-                  onClick={() => {
-                    setInput(r.q);
-                    setMode(r.type);
-                    handleScan(r.q);
-                  }}
-                  className={`rounded-full border px-3 py-1 text-xs transition
-                    ${
-                      r.type === "wallet"
-                        ? "border-cyan-500/40"
-                        : "border-emerald-500/40"
-                    }
-                    ${
-                      r.verdict === "green"
-                        ? "bg-emerald-500/10"
-                        : r.verdict === "red"
-                        ? "bg-rose-500/10"
-                        : "bg-slate-700/50"
-                    }
-                    hover:bg-slate-700/60`}
-                  title={new Date(r.ts).toLocaleString()}
-                >
-                  {r.type === "wallet" ? "W:" : "P:"} {shorten(r.q)}{" "}
-                  {r.verdict ? `• ${r.verdict}` : ""}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Results */}
-        <div className="mt-6 space-y-3">
-          {loading && <LoadingScan />}
-
-          {result && result.status === "error" && (
-            <div className="mx-auto max-w-2xl rounded-xl border border-rose-500/60 bg-rose-950/40 px-5 py-3 text-left text-rose-200">
-              <p className="font-semibold">We couldn’t complete the check</p>
-              <p className="text-sm opacity-90">{result.message}</p>
-              <p className="mt-1 text-[11px] text-rose-300/80">
-                Tip: check your internet and try again.
-              </p>
-            </div>
-          )}
-
-          {result && result.status === "ok" && (
-            <div className="mx-auto w-full max-w-2xl">
-              <ResultCard result={result} />
-              {/* Lite social proof */}
-              <TrustStats
-                query={
-                  (result.details?.address as string) ||
-                  (result.details?.domain as string) ||
-                  qParam
-                }
-                kind={result.details?.address ? "wallet" : "project"}
-              />
-            </div>
-          )}
-        </div>
-
-        <p className="mt-6 text-center text-[11px] text-slate-400">
-          Beta heuristics only — always double-check before sending funds.
-        </p>
       </section>
-      <StatusBadge />
-      <WatchlistSection />
-      <footer className="mt-10 text-xs text-slate-500">
-        Build: {process.env.NEXT_PUBLIC_GIT_BRANCH ?? "unknown"} @ {(process.env.NEXT_PUBLIC_GIT_COMMIT ?? "unknown").slice(0,7)}
-      </footer>
-    </main>
+
+      {/* STORIES / PARTNERS */}
+      <section id="stories" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">stories</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Trusted by the most discerning XRPL institutions
+          </h2>
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm uppercase tracking-[0.35em] text-white/40">
+            {partnerHighlights.map((partner) => (
+              <span
+                key={partner}
+                className="rounded-full border border-white/10 px-5 py-2 text-white/60"
+              >
+                {partner}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-6 md:grid-cols-3">
+          {testimonials.map((t) => (
+            <div
+              key={t.author}
+              className="glass-panel--soft flex h-full flex-col gap-6 p-6"
+            >
+              <p className="text-sm leading-relaxed text-white/80">“{t.quote}”</p>
+              <div className="space-y-1 text-xs uppercase tracking-[0.35em] text-white/50">
+                <p>{t.author}</p>
+                <p className="text-white/40">{t.role}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* SECURITY */}
+      <section id="security" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">security</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Global compliance without compromise
+          </h2>
+          <p className="mx-auto max-w-2xl text-balance text-sm text-white/60 sm:text-base">
+            Dual-region deployments, sovereign options, and a dedicated trust
+            science desk ensure your regulators stay confident and informed.
+          </p>
+        </div>
+        <div className="glass-panel--soft grid gap-6 px-6 py-10 sm:grid-cols-3 sm:px-10">
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/50">
+              Certifications
+            </p>
+            <p className="text-sm text-white/70">
+              SOC 2 Type II, ISO 27001, GDPR, and MiCA-aligned controls with
+              external attestations.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/50">
+              Residency
+            </p>
+            <p className="text-sm text-white/70">
+              Choose EU or US clusters, with sovereign deployments for central
+              banks and regulatory sandboxes.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/50">
+              Response
+            </p>
+            <p className="text-sm text-white/70">
+              24/7 encrypted support, executive incident briefings, and{" "}
+              <span className="text-gradient">15-minute</span> SLA activations.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="space-y-12">
+        <div className="grid gap-6 text-center">
+          <span className="tag-pill mx-auto">faq</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Questions from premium partners
+          </h2>
+        </div>
+        <div className="space-y-4">
+          {faqItems.map((item) => (
+            <details
+              key={item.question}
+              className="group rounded-3xl border border-white/10 bg-white/5 px-6 py-6 transition hover:border-white/30"
+            >
+              <summary className="flex cursor-pointer items-center justify-between gap-6 text-left text-sm font-medium text-white/80">
+                <span>{item.question}</span>
+                <span className="text-white/40 transition group-open:rotate-45">+</span>
+              </summary>
+              <p className="mt-4 text-sm leading-relaxed text-white/60">
+                {item.answer}
+              </p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-900/40 px-6 py-16 text-center shadow-[0_28px_80px_rgba(10,18,40,0.5)] sm:px-12">
+        <div
+          className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_65%)]"
+          aria-hidden
+        />
+        <div className="relative space-y-6">
+          <span className="tag-pill mx-auto">next chapter</span>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Request the ultra-premium XRglass private preview
+          </h2>
+          <p className="mx-auto max-w-2xl text-balance text-sm text-white/60 sm:text-base">
+            Join a curated collective of exchanges, institutions, and agencies
+            shaping the future of XRPL trust. Our concierge team will choreograph
+            a bespoke rollout for your organisation.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <Link href="/pro" className="btn-premium">
+              Schedule immersion call
+            </Link>
+            <Link
+              href="mailto:hello@xrglass.xyz"
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm text-white/70 transition hover:border-white/40 hover:text-white"
+            >
+              Email our trust desk
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
