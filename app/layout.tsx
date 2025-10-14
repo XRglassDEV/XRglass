@@ -1,27 +1,24 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import Header from "@/components/Header";
-import { Providers } from "./providers";
+import './globals.css';
+import type { ReactNode } from 'react';
+import AnimatedBackground from '@/components/AnimatedBackground';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-export const metadata: Metadata = {
-  title: "XRglass — XRP Wallet & Project Verifier",
-  description:
-    "Verify XRP wallets and crypto projects instantly. Avoid scams and rug pulls with transparent trust checks.",
+export const metadata = {
+  title: 'XRglass — Wallet Intelligence',
+  description: 'AI-powered wallet security, fraud detection & trust scoring.'
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen text-slate-800 antialiased">
-        <Providers>
-          <Header />
-          <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
-            {children}
-          </main>
-        </Providers>
+    <html lang="en">
+      <body className="min-h-screen text-slate-900">
+        <AnimatedBackground />
+        <Header />
+        <main>{children}</main>
+        <Footer />
+        {/* GSAP CDN (for safety on Vercel edge) */}
+        <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
       </body>
     </html>
   );
