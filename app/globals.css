@@ -1,173 +1,47 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+import './globals.css';
+import type { ReactNode } from 'react';
+import Link from 'next/link';
 
-:root {
-  color-scheme: dark;
-  --surface: 230 50% 6%;
-  --surface-secondary: 235 38% 12%;
-  --surface-tertiary: 232 36% 16%;
-  --accent: 195 92% 58%;
-  --accent-secondary: 271 91% 67%;
-  --accent-soft: 195 92% 58% / 0.12;
-  --text: 210 40% 96%;
-  --text-muted: 215 18% 72%;
-  --border: 226 35% 22%;
-  --radius-lg: 32px;
-  --radius-md: 24px;
-  --glow: 196 100% 74%;
-}
+export const metadata = {
+  title: 'XRglass — Cinematic XRPL Trust',
+  description: 'AI narratives, behavioural analytics, and programmable automations.'
+};
 
-* {
-  box-sizing: border-box;
-}
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body className="min-h-screen">
+        {/* Header */}
+        <header className="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-white/5 border-b border-white/10">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+            <Link href="/" className="text-white font-semibold">XRglass</Link>
+            <nav className="hidden md:flex items-center gap-6 text-sm text-white/70">
+              <Link href="/">Home</Link>
+              <Link href="/marketplace">Marketplace</Link>
+              <Link href="/pricing">Pricing</Link>
+              <Link href="/dashboard" className="btn-premium">XRglass Pro</Link>
+            </nav>
+            <button className="md:hidden text-white/80">☰</button>
+          </div>
+        </header>
 
-html,
-body {
-  min-height: 100%;
-}
+        {/* Page container */}
+        <main className="mx-auto max-w-7xl px-6 py-14">
+          {children}
+        </main>
 
-body {
-  margin: 0;
-  font-family: var(--font-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top left, hsla(195, 80%, 26%, 0.38), transparent 45%),
-    radial-gradient(circle at top right, hsla(268, 88%, 30%, 0.32), transparent 46%),
-    hsl(var(--surface));
-  color: hsl(var(--text));
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-a:hover {
-  color: hsl(var(--accent));
-}
-
-.bg-surface {
-  background-color: hsl(var(--surface));
-}
-
-.text-muted {
-  color: hsl(var(--text-muted));
-}
-
-.glass-panel {
-  border-radius: var(--radius-lg);
-  background: linear-gradient(130deg, rgba(28, 42, 79, 0.86), rgba(18, 21, 40, 0.88));
-  border: 1px solid rgba(88, 118, 255, 0.08);
-  box-shadow:
-    0 24px 60px rgba(9, 14, 35, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(22px);
-}
-
-.glass-panel--soft {
-  border-radius: var(--radius-md);
-  background: linear-gradient(145deg, rgba(33, 41, 78, 0.82), rgba(24, 29, 60, 0.76));
-  border: 1px solid rgba(138, 168, 255, 0.08);
-  box-shadow: 0 18px 48px rgba(7, 12, 32, 0.45);
-  backdrop-filter: blur(20px);
-}
-
-.shadow-ring {
-  position: relative;
-  isolation: isolate;
-}
-
-.shadow-ring::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.16));
-  box-shadow: 0 0 120px rgba(79, 70, 229, 0.18);
-  opacity: 0.6;
-  transition: opacity 0.3s ease;
-  z-index: -1;
-}
-
-.shadow-ring:hover::before {
-  opacity: 1;
-}
-
-@keyframes floatSlow {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(0, -16px, 0);
-  }
-}
-
-@keyframes pulseSoft {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@keyframes auraDrift {
-  0% {
-    transform: translate3d(-10%, -10%, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(10%, 5%, 0) scale(1.08);
-  }
-  100% {
-    transform: translate3d(-10%, -10%, 0) scale(1);
-  }
-}
-
-@layer utilities {
-  .btn-premium {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold tracking-wide text-white transition duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-sky-400;
-    background: linear-gradient(135deg, rgba(56, 189, 248, 1), rgba(96, 165, 250, 1), rgba(168, 85, 247, 1));
-    box-shadow:
-      0 12px 40px rgba(56, 189, 248, 0.32),
-      inset 0 1px 0 rgba(255, 255, 255, 0.32);
-  }
-
-  .btn-premium::after {
-    content: "";
-    position: absolute;
-    inset: -10px;
-    border-radius: 999px;
-    background: radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 55%);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    z-index: -1;
-  }
-
-  .btn-premium:hover::after {
-    opacity: 1;
-  }
-
-  .tag-pill {
-    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.3em];
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.18));
-    color: hsl(var(--text));
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    letter-spacing: 0.24em;
-  }
-
-  .grid-outline {
-    background-image:
-      linear-gradient(to right, rgba(126, 144, 255, 0.12) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(126, 144, 255, 0.12) 1px, transparent 1px);
-    background-size: 38px 38px;
-  }
-
-  .text-gradient {
-    background: linear-gradient(135deg, rgba(244, 244, 255, 1) 0%, rgba(165, 243, 252, 1) 40%, rgba(196, 181, 253, 1) 90%);
-    -webkit-background-clip: text;
-    color: transparent;
-  }
+        {/* Footer */}
+        <footer className="border-t border-white/10">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-10 text-sm text-white/50">
+            <div>© {new Date().getFullYear()} XRglass</div>
+            <div className="flex gap-4">
+              <Link href="#">Terms</Link>
+              <Link href="#">Privacy</Link>
+              <Link href="#">Contact</Link>
+            </div>
+          </div>
+        </footer>
+      </body>
+    </html>
+  );
 }
