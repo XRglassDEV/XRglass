@@ -2,138 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  --bg: 214 100% 98%;
-  --panel: 0 0% 100%;
-  --text: 210 35% 13%;
-  --muted: 210 15% 40%;
-  --ring: 199 89% 58%;
-  --card-ring: 199 100% 88%;
-  --shadow: 210 20% 10%;
-  --radius: 16px;
-}
-
-html,
-body {
-  min-height: 100%;
-}
-
-body {
-  @apply antialiased text-slate-800;
+/* Dark premium backdrop */
+html,body{
+  min-height:100%;
   background:
-    radial-gradient(1200px 600px at 10% -10%, hsl(199 100% 92%) 0%, transparent 60%),
-    radial-gradient(1200px 600px at 90% -10%, hsl(200 100% 95%) 0%, transparent 60%),
-    hsl(var(--bg));
+    radial-gradient(1200px 800px at 20% -10%, #0b1226 0%, #0e1733 40%, #0b1226 100%),
+    linear-gradient(180deg, #0a1024 0%, #0f1a3a 100%);
+  color-scheme: dark;
 }
 
-a {
-  @apply underline-offset-4 transition-colors hover:text-sky-600;
+/* Tokens */
+:root{
+  --glass-strong: rgba(255,255,255,.10);
+  --glass-soft:   rgba(255,255,255,.06);
+  --stroke:       rgba(255,255,255,.18);
+  --grad-1:#5ad4ff;
+  --grad-2:#2a7bff;
+  --grad-3:#aee9ff;
 }
 
-.container {
-  @apply mx-auto max-w-7xl px-4;
+/* Panels */
+.glass-panel{
+  background: var(--glass-strong);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--stroke);
+  border-radius: 32px;
+  box-shadow: 0 28px 80px rgba(10,18,40,.55);
+}
+.glass-panel--soft{
+  background: var(--glass-soft);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  border-radius: 28px;
+}
+.shadow-ring{
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.08) inset,
+    0 30px 80px rgba(10, 30, 80, .45),
+    0 0 0 1px rgba(150, 200, 255, .10);
 }
 
-.card {
-  @apply rounded-2xl border border-sky-100 bg-white/70 backdrop-blur shadow-[0_10px_30px_-12px_rgba(10,42,59,0.2)];
+/* Premium button */
+.btn-premium{
+  @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold;
+  color:#fff;
+  background: linear-gradient(135deg, var(--grad-1), var(--grad-2));
+  box-shadow: 0 18px 50px rgba(35,120,255,.35);
+  transition: transform .15s ease, filter .15s ease;
+}
+.btn-premium:hover{ filter: brightness(1.06) saturate(1.05); transform: translateY(-1px); }
+
+/* Gradient text */
+.text-gradient{
+  background: linear-gradient(135deg, var(--grad-1), var(--grad-2) 60%, var(--grad-3));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
 }
 
-.btn {
-  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium bg-sky-500 text-white hover:bg-sky-400 active:scale-[.99] transition;
+/* Small tag pill */
+.tag-pill{
+  @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.35em];
+  background: rgba(255,255,255,.08);
+  border: 1px solid var(--stroke);
+  color: rgba(255,255,255,.75);
 }
 
-.badge {
-  @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-sky-100 text-sky-700;
+/* Section rails helper (optional) */
+.section-rails::before,.section-rails::after{
+  content:""; position:absolute; inset-block:0; width:1px;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.25), transparent);
 }
+.section-rails::before{ left:0 } .section-rails::after{ right:0 }
 
-h1,
-h2,
-h3 {
-  @apply tracking-tight text-slate-900;
-}
+/* FAQ */
+details{ transition:border-color .2s ease }
+details[open]{ border-color: rgba(255,255,255,.35) }
 
-/* --- Legacy utilities kept for compatibility --- */
-.bg-grid-slate {
-  background-image:
-    linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-
-.text-gradient {
-  background: linear-gradient(to right, #38bdf8, #22d3ee, #34d399);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.card-base {
-  @apply rounded-2xl border border-sky-100 bg-white/70 shadow-sm transition-colors duration-300;
-}
-
-/* === XRglass: glowing CTA button === */
-@keyframes glowPulse {
-  0%,
-  100% {
-    opacity: 0.65;
-    transform: scale(1);
-    filter: blur(18px);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
-    filter: blur(22px);
-  }
-}
-
-@layer utilities {
-  .btn-glow {
-    position: relative;
-    isolation: isolate;
-    transition: transform 0.15s ease, background-color 0.15s ease;
-  }
-
-  .btn-glow:active {
-    transform: translateY(1px) scale(0.99);
-  }
-
-  .btn-glow::before {
-    content: "";
-    position: absolute;
-    inset: -2px;
-    z-index: -1;
-    border-radius: inherit;
-    background:
-      radial-gradient(120% 120% at 50% 20%, rgba(34, 211, 238, 0.55), transparent 60%),
-      radial-gradient(120% 120% at 20% 120%, rgba(16, 185, 129, 0.45), transparent 55%);
-    opacity: 0.65;
-    filter: blur(18px);
-    transition: opacity 0.2s ease, filter 0.2s ease, transform 0.2s ease;
-    pointer-events: none;
-  }
-
-  .btn-glow:hover::before {
-    opacity: 0.95;
-    filter: blur(22px);
-  }
-
-  .btn-glow:disabled::before {
-    opacity: 0.25;
-  }
-
-  .btn-glow--pulse::before {
-    animation: glowPulse 3.2s ease-in-out infinite;
-  }
-
-  .btn-glow:disabled.btn-glow--pulse::before {
-    animation-duration: 5s;
-    opacity: 0.2;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .btn-glow--pulse::before {
-      animation: none;
-    }
-  }
-}
+/* crisp radius utility */
+.rounded-\[40px\]{ border-radius:40px }
