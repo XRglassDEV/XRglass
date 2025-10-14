@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/config/vercel.json",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/dashboard",
+      "statusCode": 307
+    }
+  ]
+}
