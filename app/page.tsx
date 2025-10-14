@@ -1,11 +1,24 @@
 // app/page.tsx
 import Link from "next/link";
+import Scanner from "@/components/Scanner";
 
-const heroStats = [
-  { label: "wallets verified", value: "2.4M+" },
-  { label: "alerts processed", value: "54B" },
-  { label: "global uptime", value: "99.998%" },
-];
+/* … keep the same arrays: heroStats, platformPillars, capabilityCards, workflowStages, testimonials, partnerHighlights, faqItems … */
+/* If you no longer have them in this file, paste them back from the previous version. */
+
+export default function HomePage() {
+  return (
+    <div className="space-y-28">
+      {/* HERO (unchanged) */}
+      {/* … your existing hero section exactly as before … */}
+
+      {/* 🔥 FREE SCANNER (for everyone) */}
+      <Scanner />
+
+      {/* PLATFORM */}
+      {/* … keep all the remaining sections exactly as before … */}
+    </div>
+  );
+}
 
 const platformPillars = [
   {
@@ -465,3 +478,4 @@ export default function HomePage() {
     </div>
   );
 }
+
