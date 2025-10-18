@@ -1,0 +1,294 @@
+name: Codex AutoMerge WalletScan
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config user.name "MiaX"
+          git config user.email "miasatox@protonmail.com"
+
+      - name: Scaffold wallet scan feature
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p app/api/scan/wallet
+          mkdir -p lib
+
+          if [ ! -f app/api/scan/wallet/route.ts ]; then
+            cat <<'TS' > app/api/scan/wallet/route.ts
+            export const runtime = "nodejs";
+
+            import { NextResponse } from "next/server";
+            import xrpl from "xrpl";
+
+            import { evaluateWallet } from "@/lib/wallet-scan";
+
+            function isValidXrpAccount(address: string | null): address is string {
+              return !!address && /^r[1-9A-HJ-NP-Za-km-z]{24,35}$/.test(address);
+            }
+
+            async function fetchAccountSnapshot(client: xrpl.Client, account: string) {
+              const [info, transactions] = await Promise.all([
+                client
+                  .request({
+                    command: "account_info",
+                    account,
+                    ledger_index: "validated",
+                  })
+                  .catch(() => null),
+                client
+                  .request({
+                    command: "account_tx",
+                    account,
+                    ledger_index_min: -1,
+                    ledger_index_max: -1,
+                    limit: 20,
+                    forward: false,
+                  })
+                  .then(res => res.result?.transactions ?? [])
+                  .catch(() => []),
+              ]);
+
+              return {
+                address: account,
+                accountInfo: info?.result ?? null,
+                transactions,
+                fetchedAt: new Date().toISOString(),
+              };
+            }
+
+            export async function GET(request: Request) {
+              const url = new URL(request.url);
+              const account = url.searchParams.get("address");
+
+              if (!isValidXrpAccount(account)) {
+                return NextResponse.json(
+                  { status: "error", message: "Invalid or missing XRP account address." },
+                  { status: 400 },
+                );
+              }
+
+              const endpoint = process.env.XRPL_ENDPOINT || "wss://xrplcluster.com";
+              const client = new xrpl.Client(endpoint);
+
+              try {
+                await client.connect();
+                const snapshot = await fetchAccountSnapshot(client, account);
+                const score = evaluateWallet(snapshot);
+
+                return NextResponse.json({ status: "ok", ...score }, { status: 200 });
+              } catch (error: any) {
+                return NextResponse.json(
+                  { status: "error", message: error?.message ?? "Unable to reach XRPL." },
+                  { status: 502 },
+                );
+              } finally {
+                try {
+                  await client.disconnect();
+                } catch (_) {
+                  // ignore disconnect errors
+                }
+              }
+            }
+            TS
+          else
+            echo "app/api/scan/wallet/route.ts already exists – skipping generation"
+          fi
+
+          if [ ! -f lib/wallet-scan.ts ]; then
+            cat <<'TS' > lib/wallet-scan.ts
+            type Severity = "low" | "medium" | "high";
+            type Verdict = "green" | "orange" | "red";
+
+            export interface WalletSignal {
+              id: string;
+              label: string;
+              severity: Severity;
+              evidence?: string;
+            }
+
+            export interface WalletEvaluation {
+              address: string;
+              verdict: Verdict;
+              scoreValue: number;
+              summary: string;
+              signals: WalletSignal[];
+              snapshot: any;
+            }
+
+            function classify(score: number): Verdict {
+              if (score >= 70) return "red";
+              if (score >= 35) return "orange";
+              return "green";
+            }
+
+            function dropsToXrp(value: unknown): number {
+              const numeric = typeof value === "string" ? Number(value) : Number.NaN;
+              if (Number.isFinite(numeric)) {
+                return numeric / 1_000_000;
+              }
+              return 0;
+            }
+
+            export function evaluateWallet(snapshot: any): WalletEvaluation {
+              const signals: WalletSignal[] = [];
+              let score = 0;
+
+              const accountData = snapshot?.accountInfo?.account_data;
+
+              if (!accountData) {
+                score += 60;
+                signals.push({
+                  id: "account_not_found",
+                  label: "Account not found or not yet funded",
+                  severity: "high",
+                });
+              } else {
+                const balance = dropsToXrp(accountData.Balance);
+                if (balance < 5) {
+                  score += 10;
+                  signals.push({
+                    id: "very_low_balance",
+                    label: "XRP balance below 5 XRP",
+                    severity: "medium",
+                    evidence: `${balance.toFixed(2)} XRP`,
+                  });
+                }
+
+                const txs: any[] = Array.isArray(snapshot?.transactions) ? snapshot.transactions : [];
+                const outgoing = txs
+                  .map(tx => tx?.tx)
+                  .filter((tx: any) => tx?.TransactionType === "Payment" && tx?.Account === accountData.Account);
+
+                if (outgoing.length < 3) {
+                  score += 10;
+                  signals.push({
+                    id: "low_activity",
+                    label: "Very limited transaction history",
+                    severity: "low",
+                  });
+                }
+
+                const largePayment = outgoing.find((tx: any) => {
+                  if (typeof tx?.Amount === "string") {
+                    return dropsToXrp(tx.Amount) >= 1_000;
+                  }
+                  return false;
+                });
+
+                if (largePayment) {
+                  score += 20;
+                  signals.push({
+                    id: "large_outgoing_payment",
+                    label: "Large outgoing payment detected",
+                    severity: "medium",
+                    evidence: `Transaction ${largePayment.hash ?? "(unknown)"} ≥ 1000 XRP`,
+                  });
+                }
+
+                if (!accountData.Flags) {
+                  score += 5;
+                  signals.push({
+                    id: "no_account_flags",
+                    label: "No protective account flags configured",
+                    severity: "low",
+                  });
+                }
+              }
+
+              const verdict = classify(score);
+              const summary =
+                verdict === "red"
+                  ? "High risk – missing account information or major warning signals detected."
+                  : verdict === "orange"
+                  ? "Moderate risk – some cautionary signals present."
+                  : "Low risk – no major warnings from basic checks.";
+
+              return {
+                address: snapshot?.address ?? "",
+                verdict,
+                scoreValue: score,
+                summary,
+                signals,
+                snapshot,
+              };
+            }
+            TS
+          else
+            echo "lib/wallet-scan.ts already exists – skipping generation"
+          fi
+
+          if [ -f .env.example ]; then
+            if ! grep -q '^XRPL_ENDPOINT=' .env.example; then
+              cat <<'ENV' >> .env.example
+          # XRPL WebSocket endpoint used by the wallet scan API
+          XRPL_ENDPOINT=wss://xrplcluster.com
+          ENV
+            fi
+          else
+            cat <<'ENV' > .env.example
+          # XRPL WebSocket endpoint used by the wallet scan API
+          XRPL_ENDPOINT=wss://xrplcluster.com
+          ENV
+          fi
+
+      - name: Ensure xrpl dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f package.json ]; then
+            echo "package.json not found"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require("fs");
+          const pkgPath = "package.json";
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+          pkg.dependencies = pkg.dependencies || {};
+          if (!pkg.dependencies.xrpl) {
+            pkg.dependencies.xrpl = "^3.0.0";
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+          }
+          NODE
+
+      - name: Install dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install and build
+        shell: bash
+        run: |
+          npm install
+          npm run build --if-present
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: automation/codex-wallet-scan
+          title: "feat: bootstrap wallet scan API"
+          commit-message: "feat: scaffold wallet scan API and scoring"
+          body: |
+            This automated workflow scaffolds a basic XRP wallet scan endpoint:
+            - Adds `app/api/scan/wallet/route.ts` using the XRPL client.
+            - Provides reusable scoring helpers in `lib/wallet-scan.ts`.
+            - Ensures `.env.example` documents the `XRPL_ENDPOINT`.
+            - Adds the `xrpl` dependency when missing.
+
+            Review the generated code, adjust it as needed, and merge when ready.
+          labels: |
+            automation
+            wallet-scan
