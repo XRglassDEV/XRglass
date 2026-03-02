@@ -1,6 +1,5 @@
-// app/page.tsx — drop into /app/page.tsx
-// Next.js 15 + TypeScript + Tailwind v4
-“use client”;
+// app/page.tsx
+'use client'
 
 import { useState, useEffect, useRef } from “react”;
 
