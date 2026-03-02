@@ -619,7 +619,7 @@ return (
               boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
             }}
           >
-            {copied ? "✓ Copied!" : "Copy XRP Address"}
+            {copied ? "✓ Copied!" : "Copy XRP Address!"}
           </button>
 
           <p style={{ textAlign: "center", marginTop: 14, fontSize: "0.72rem", color: "rgba(255,255,255,0.22)" }}>
