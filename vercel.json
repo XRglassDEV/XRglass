@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "env": { "NEXT_TELEMETRY_DISABLED": "1" },
+  "redirects": [
+    { "source": "/", "destination": "/dashboard", "permanent": false }
+  ]
+}
